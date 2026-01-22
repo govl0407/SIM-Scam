@@ -18,8 +18,8 @@ const send = async () => {
   boxRef.value.scrollTop = boxRef.value.scrollHeight
 
   try {
-    const data = await sendChat(text)
-    chats.value.push({ role: 'bot', text: data.reply ?? '(응답 없음)' })
+    const reply = await sendChat(text)
+    chats.value.push({ role: 'bot', text: reply ?? '(응답 없음)' })
   } catch (e) {
     chats.value.push({ role: 'bot', text: '연결 실패' })
     console.error(e)

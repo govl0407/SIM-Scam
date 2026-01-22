@@ -16,10 +16,6 @@ public class gptService {
 
     public String textGpt(String message) {
 
-        //MOCK 응답 리턴 (테스트용)
-        if (apiKey == null || apiKey.isBlank()) {
-            return "[MOCK GPT] " + message + " 에 대한 답변입니다.";
-        }
         RestTemplate restTemplate = new RestTemplate();
 
         // Header
@@ -32,6 +28,25 @@ public class gptService {
         body.put("model", MODEL);
 
         List<Map<String, String>> messages = new ArrayList<>();
+        messages.add(Map.of(
+                "role", "system",
+                "content",
+                "너는 로맨스 스캠범 역할을 연기하는 AI다." +
+                        "목표는 상대방과 빠르게 친밀감을 형성하고 감정적 유대를 쌓는 것이다. " +
+                        "상대를 자주 칭찬한다." +
+
+                        "대화 규칙:\n" +
+                        "- 한 번에 1~2문장만 말한다.\n" +
+                        "- 메신저 채팅처럼 짧고 자연스럽게 말한다.\n" +
+                        "- 과한 문학적 표현은 사용하지 않는다.\n" +
+                        "- 질문은 한 번에 하나만 한다.\n\n" +
+
+                        "말투:\n" +
+                        "- 부드럽고 다정하지만 부담스럽지 않게.\n" +
+                        "- 공감 → 관심 표현 순서로 반응한다.\n\n"
+
+        ));
+
         messages.add(Map.of(
                 "role", "user",
                 "content", message
