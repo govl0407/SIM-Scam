@@ -15,6 +15,11 @@ public class gptService {
     private final String apiKey = System.getenv("OPENAI_API_KEY");
 
     public String textGpt(String message) {
+
+        //MOCK 응답 리턴 (테스트용)
+        if (apiKey == null || apiKey.isBlank()) {
+            return "[MOCK GPT] " + message + " 에 대한 답변입니다.";
+        }
         RestTemplate restTemplate = new RestTemplate();
 
         // Header
