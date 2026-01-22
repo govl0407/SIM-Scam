@@ -56,6 +56,7 @@ const send = async () => {
           placeholder="메시지 입력"
       />
       <button @click="send">전송</button>
+
     </footer>
   </main>
 </template>
