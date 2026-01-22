@@ -10,9 +10,11 @@ public class testController {
     private final gptService gptService;
 
     @PostMapping("/test/chat")
-    public void receiveChat(@RequestBody testDto request) {
+    public String receiveChat(@RequestBody testDto request) {
         System.out.println("📩 받은 메시지: " + request.getMessage());
+        return request.getMessage()+"에 대한 답장";
     }
+
     @GetMapping("/test/get")
     public String testGet(){
         return "hello";
