@@ -1,11 +1,12 @@
 package com.example.be.controller;
 
-import com.example.be.dto.testDto;
+import com.example.be.dto.userMessageDto;
 import com.example.be.service.ChatService;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @CrossOrigin(origins = "*")
+@RequestMapping("/test")
 public class testController {
 
     private final ChatService chatService;
@@ -14,14 +15,14 @@ public class testController {
         this.chatService = chatService;
     }
 
-    @PostMapping("/test/chat")
-    public String chat(@RequestBody testDto request) {
+    @PostMapping("/chat")
+    public String chat(@RequestBody userMessageDto request) {
 
         String sessionId = "test-session"; // 나중에 userId
-        return chatService.chat(sessionId, request.getMessage());
+        return chatService.chat(sessionId, request);
     }
 
-    @GetMapping("/test/get")
+    @GetMapping("/get")
     public String testGet() {
         return "hello";
     }

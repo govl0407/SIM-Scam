@@ -11,10 +11,11 @@ import java.util.*;
 public class gptService {
 
     private static final String OPENAI_URL = "https://api.openai.com/v1/chat/completions";
-    private static final String MODEL = "gpt-4.1-mini"; // 가볍고 테스트용 좋음
+    private static final String MODEL = "gpt-4.1-mini"; // 대화 모델
     Dotenv dotenv = Dotenv.load();
     String apiKey = dotenv.get("OPENAI_API_KEY");
 
+    //gpt한테 질문 1개만
     public String textGpt(String message) {
         RestTemplate restTemplate = new RestTemplate();
 
@@ -51,7 +52,9 @@ public class gptService {
         return gptMessage.get("content").toString();
     }
 
+    //gpt랑 대화
     public String chatGpt(List<Map<String, String>> messages) {
+        //GPT 연결
         RestTemplate restTemplate = new RestTemplate();
 
         HttpHeaders headers = new HttpHeaders();
@@ -75,7 +78,7 @@ public class gptService {
         Map<String, Object> gptMessage =
                 (Map<String, Object>) choice.get("message");
 
-        return gptMessage.get("content").toString();
+        return gptMessage.get("content").toString();//답변 내용만 추출
     }
 
 }

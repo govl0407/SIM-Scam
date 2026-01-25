@@ -1,5 +1,6 @@
 package com.example.be.service;
 
+import com.example.be.dto.userMessageDto;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -16,10 +17,10 @@ public class ChatService {
         this.gptService = gptService;
     }
 
-    public String chat(String sessionId, String userMessage) {
-
+    public String chat(String sessionId, userMessageDto request) {
+        String userMessage = request.getMessage();
         List<Map<String, String>> messages =
-                chatMemory.getMessages(sessionId);
+                chatMemory.getMessages(sessionId);//세션 아이디로 대화 불러오기
 
         // 시스템 프롬프트 초기화
         if (messages.isEmpty()) {
