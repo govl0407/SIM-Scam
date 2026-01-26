@@ -38,6 +38,8 @@ public class ChatService {
                 image는 꼭 필요할 때만 포함하라.
                 최근 같은 image 분류가 사용되었다면 image 없이 대답해도 된다.
                 
+                대화의 흐름이 이어지는 중에 이미 보냈던 이미지를 최대한 다시 쓰지 않게 해라
+                
                 image 값은 반드시 "상위/하위" 형식이다.
                 허용된 값:
                 - life/cafe
