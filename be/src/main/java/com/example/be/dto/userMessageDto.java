@@ -1,6 +1,6 @@
 package com.example.be.dto;
 
-public class testDto {
+public class userMessageDto {
     private String message;
 
     public String getMessage() {
