@@ -6,7 +6,7 @@ import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 import tools.jackson.databind.ObjectMapper;
 @RestController
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "http://localhost:5173")
 @RequestMapping("/test")
 public class testController {
 
