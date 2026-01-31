@@ -40,7 +40,8 @@ public class ChatService {
         if (messages.isEmpty()) {
             messages.add(Map.of(
                     "role", "system",
-                    "content", promptLoader.load("prompts/scam_chat_system.txt")
+                    //"content", promptLoader.load("prompts/scam_chat_system.txt")
+                    "content", promptLoader.load("prompts/romance_scam_prompt.txt")
             ));
         }
 

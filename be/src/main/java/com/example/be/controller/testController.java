@@ -4,7 +4,7 @@ import com.example.be.dto.userMessageDto;
 import com.example.be.service.ChatService;
 import java.util.Map;
 import org.springframework.web.bind.annotation.*;
-import tools.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 @RestController
 @CrossOrigin(origins = "http://localhost:5173")
 @RequestMapping("/test")
