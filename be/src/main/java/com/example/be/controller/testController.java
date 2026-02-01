@@ -1,5 +1,6 @@
 package com.example.be.controller;
 
+import com.example.be.dto.EventResponseDto;
 import com.example.be.dto.userMessageDto;
 import com.example.be.service.ChatService;
 import java.util.Map;
@@ -30,7 +31,23 @@ public class testController {
             throw new RuntimeException("GPT 응답 JSON 파싱 실패: " + strJson, e);
         }
     }
+    @PostMapping("/event-response")
+    public Map<String, Object> eventResponse(
+            @RequestBody EventResponseDto request
+    ) {
 
+        String result = chatService.chatWithEventResponse(
+                request.getSessionId(),
+                request.getEvent(),
+                request.getAnswer()
+        );
+
+        try {
+            return objectMapper.readValue(result, Map.class);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
     @GetMapping("/get")
     public String testGet() {
         return "hello";

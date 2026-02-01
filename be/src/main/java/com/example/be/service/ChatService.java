@@ -78,4 +78,65 @@ public class ChatService {
             throw new RuntimeException("GPT 응답 처리 실패", e);
         }
     }
+    public String chatWithEventResponse(
+            String sessionId,
+            String event,
+            String answer
+    ) {
+
+        List<Map<String, String>> messages =
+                chatMemory.getMessages(sessionId);
+
+        // system 프롬프트는 최초 1회만
+        if (messages.isEmpty()) {
+            messages.add(Map.of(
+                    "role", "system",
+                    "content", promptLoader.load("prompts/romance_scam_prompt.txt")
+            ));
+        }
+
+    /*
+     GPT에게 전달되는 "확정된 사용자 선택"
+     → GPT는 판단하지 말고 결과만 반영
+     */
+        Map<String, Object> eventPayload = Map.of(
+                "event", event,
+                "answer", answer
+        );
+
+        String eventJson;
+        try {
+            eventJson = objectMapper.writeValueAsString(eventPayload);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        messages.add(Map.of(
+                "role", "user",
+                "content", eventJson
+        ));
+
+        String reply = gptService.chatGpt(messages);
+
+        messages.add(Map.of(
+                "role", "assistant",
+                "content", reply
+        ));
+
+        try {
+            Map<String, Object> replyMap =
+                    objectMapper.readValue(reply, Map.class);
+
+            // 🔥 이벤트는 이미 확정 → 다시 registerEvent 안 함
+            replyMap.put(
+                    "event_log",
+                    eventTracker.getLogs(sessionId)
+            );
+
+            return objectMapper.writeValueAsString(replyMap);
+
+        } catch (Exception e) {
+            throw new RuntimeException("GPT 이벤트 응답 처리 실패", e);
+        }
+    }
 }
