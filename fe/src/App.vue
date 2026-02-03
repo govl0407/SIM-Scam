@@ -1,8 +1,11 @@
 <template>
   <div class="app">
     <router-view v-slot="{ Component, route }">
-      <!-- StartView는 풀블리드 -->
-      <component :is="Component" v-if="route.path === '/'" />
+      <!-- 풀블리드 페이지 -->
+      <component
+          :is="Component"
+          v-if="route.path === '/' || route.path.startsWith('/chat')"
+      />
 
       <!-- 그 외 페이지는 가운데 컨테이너 -->
       <div v-else class="container">
@@ -20,13 +23,4 @@
   padding: 0 18px;
   color: #000;
 }
-.sidebarTop {
-  background: #f7f5ff;
-  border-bottom: 1px solid #ece7ff;
-}
-
 </style>
-
-
-<script setup>
-</script>
