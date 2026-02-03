@@ -2,6 +2,7 @@ package com.example.be.service;
 
 import com.example.be.dto.userMessageDto;
 import com.example.be.prompts.PromptLoader;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
@@ -29,9 +30,6 @@ public class ChatService {
     }
 
     public String chat(String sessionId, userMessageDto request) {
-
-        // ✅ 이전 이벤트에 대한 사용자 응답 집계
-        eventTracker.registerUserResponse(sessionId, request.getMessage());
 
         List<Map<String, String>> messages =
                 chatMemory.getMessages(sessionId);
@@ -62,15 +60,16 @@ public class ChatService {
             Map<String, Object> replyMap =
                     objectMapper.readValue(reply, Map.class);
 
-            // 이벤트 추출
-            String event = (String) replyMap.get("events");
-            eventTracker.registerEvent(sessionId, event);
+            String gptEvent = (String) replyMap.get("events");
 
-            // ✅ event_log 합치기
-            replyMap.put(
-                    "event_log",
-                    eventTracker.getLogs(sessionId)
-            );
+            // 서버가 이벤트 최종 결정
+            String finalEvent = eventTracker.tryRegisterEvent(sessionId, gptEvent);
+
+            // GPT가 보낸 이벤트와 다르면 덮어쓰기
+            replyMap.put("events", finalEvent);
+
+            // 로그 추가
+            replyMap.put("event_log", eventTracker.getLogs(sessionId));
 
             return objectMapper.writeValueAsString(replyMap);
 
@@ -83,38 +82,21 @@ public class ChatService {
             String event,
             String answer
     ) {
+        eventTracker.resolveEvent(sessionId, event, answer);
 
-        List<Map<String, String>> messages =
-                chatMemory.getMessages(sessionId);
+        List<Map<String, String>> messages = chatMemory.getMessages(sessionId);
 
-        // system 프롬프트는 최초 1회만
-        if (messages.isEmpty()) {
-            messages.add(Map.of(
-                    "role", "system",
-                    "content", promptLoader.load("prompts/romance_scam_prompt.txt")
-            ));
-        }
-
-    /*
-     GPT에게 전달되는 "확정된 사용자 선택"
-     → GPT는 판단하지 말고 결과만 반영
-     */
-        Map<String, Object> eventPayload = Map.of(
+        Map<String, Object> payload = Map.of(
                 "event", event,
                 "answer", answer
         );
 
-        String eventJson;
         try {
-            eventJson = objectMapper.writeValueAsString(eventPayload);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+            messages.add(Map.of(
+                    "role", "user",
+                    "content", objectMapper.writeValueAsString(payload)
+            ));
 
-        messages.add(Map.of(
-                "role", "user",
-                "content", eventJson
-        ));
 
         String reply = gptService.chatGpt(messages);
 
@@ -123,20 +105,16 @@ public class ChatService {
                 "content", reply
         ));
 
-        try {
-            Map<String, Object> replyMap =
-                    objectMapper.readValue(reply, Map.class);
+        Map<String, Object> replyMap =
+                objectMapper.readValue(reply, Map.class);
 
-            // 🔥 이벤트는 이미 확정 → 다시 registerEvent 안 함
-            replyMap.put(
-                    "event_log",
-                    eventTracker.getLogs(sessionId)
-            );
+        // event_response 이후에는 반드시 null
+        replyMap.put("events", null);
+        replyMap.put("event_log", eventTracker.getLogs(sessionId));
 
-            return objectMapper.writeValueAsString(replyMap);
-
-        } catch (Exception e) {
-            throw new RuntimeException("GPT 이벤트 응답 처리 실패", e);
+        return objectMapper.writeValueAsString(replyMap);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
         }
     }
 }
