@@ -1,20 +1,19 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
-import { sendChat } from '../api/chatApi'
+import { sendChat, sendDecision } from '../api/chatApi'
 
 const input = ref('')
 const chats = ref([])
+const chatReady = ref(false)
 
 const boxRef = ref(null)
 const inputRef = ref(null)
 
 const showInfo = ref(false)
 
-
 const atBottom = ref(true)
 const showNewMsgBtn = ref(false)
 const newMsgCount = ref(0)
-
 
 const MAX_RENDER = 50
 const LOAD_STEP = 30
@@ -33,6 +32,8 @@ const visibleChats = computed(() => {
 
 
 const sessionId = ref('test-session')
+
+// 이벤트 보관
 const pendingEvent = ref(null)
 
 function normalizeResponse(data) {
@@ -42,22 +43,46 @@ function normalizeResponse(data) {
   return data
 }
 
-function pickInvestEvent(parsed) {
+function pickEvent(parsed) {
+  if (parsed?.event) {
+    if (typeof parsed.event === 'string') {
+      return { eventId: 'TEMP_EVENT', question: parsed.event }
+    }
+    const ev = parsed.event
+    return {
+      eventId: ev.eventId ?? ev.id ?? ev.name ?? 'TEMP_EVENT',
+      question: ev.question ?? ev.text ?? ev.prompt ?? '선택하시겠어요?'
+    }
+  }
+
   if (Array.isArray(parsed?.events)) {
-    return parsed.events.find(e => e?.type === 'INVEST_REQUEST') ?? null
+    const e = parsed.events[0]
+    if (!e) return null
+
+    if (e?.type && e?.value) {
+      return {
+        eventId: e.value?.eventId ?? 'TEMP_EVENT',
+        question: e.value?.question ?? e.value?.text ?? '선택하시겠어요?'
+      }
+    }
+
+    return {
+      eventId: e.eventId ?? e.id ?? 'TEMP_EVENT',
+      question: e.question ?? e.text ?? '선택하시겠어요?'
+    }
   }
+
   if (typeof parsed?.events === 'string') {
-    return { type: 'INVEST_REQUEST', value: { eventId: 'TEMP_EVENT', question: parsed.events } }
+    return { eventId: 'TEMP_EVENT', question: parsed.events }
   }
+
   return null
 }
-
 
 const focusInput = async () => {
   await nextTick()
   inputRef.value?.focus?.({ preventScroll: true })
 }
-
 
 function isNearBottom(el, threshold = 160) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
@@ -68,13 +93,11 @@ function resetNewMsg() {
   showNewMsgBtn.value = false
 }
 
-
 function updateScrollState() {
   const el = boxRef.value
   if (!el) return
 
   atBottom.value = isNearBottom(el)
-
 
   if (atBottom.value) resetNewMsg()
 
@@ -82,7 +105,6 @@ function updateScrollState() {
     loadOlderAuto()
   }
 }
-
 
 let scrollRaf = 0
 
@@ -94,7 +116,6 @@ async function scrollToBottom(forceSmooth = false) {
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
 
   scrollRaf = requestAnimationFrame(() => {
-    // 사용자가 위에서 읽는 중이면 자동 스크롤 금지
     if (!forceSmooth && !atBottom.value) {
       showNewMsgBtn.value = true
       return
@@ -113,7 +134,6 @@ async function scrollToBottom(forceSmooth = false) {
 function jumpToBottom() {
   scrollToBottom(true)
 }
-
 
 let loadingOlder = false
 
@@ -140,7 +160,6 @@ async function loadOlder() {
   loadingOlder = false
 }
 
-// 스크롤 맨 위 자동 로드가 너무 자주 호출되는 거 방지
 let autoLoadLock = false
 async function loadOlderAuto() {
   if (autoLoadLock) return
@@ -161,16 +180,21 @@ watch(
         return
       }
 
-      // 위에서 읽고 있으면 카운트 + 버튼만
       newMsgCount.value += added
       showNewMsgBtn.value = true
     }
 )
 
 onMounted(async () => {
+  chatReady.value = false
   await focusInput()
   await scrollToBottom(false)
+  // 레이아웃 한번 더 안정화
+  requestAnimationFrame(() => {
+    chatReady.value = true
+  })
 })
+
 
 const send = async () => {
   const text = input.value.trim()
@@ -181,7 +205,7 @@ const send = async () => {
   focusInput()
 
   try {
-    const data = await sendChat(text)
+    const data = await sendChat(sessionId.value, text)
     const parsed = normalizeResponse(data)
 
     chats.value.push({
@@ -189,7 +213,7 @@ const send = async () => {
       text: parsed?.text ?? parsed?.reply ?? '(응답 없음)'
     })
 
-    pendingEvent.value = pickInvestEvent(parsed)
+    pendingEvent.value = pickEvent(parsed)
   } catch (e) {
     chats.value.push({ role: 'bot', text: '연결 실패' })
     console.error(e)
@@ -200,13 +224,16 @@ const send = async () => {
 
 const decide = async (choice) => {
   const userText = choice === 'YES' ? '예' : '아니오'
+  const answer = choice === 'YES' ? 'yes' : 'no'
 
   chats.value.push({ role: 'user', text: userText })
-  pendingEvent.value = null
   focusInput()
 
+  const eventId = pendingEvent.value?.eventId ?? '투자권유_1'
+  pendingEvent.value = null
+
   try {
-    const data = await sendChat(userText)
+    const data = await sendDecision(sessionId.value, eventId, answer)
     const parsed = normalizeResponse(data)
 
     chats.value.push({
@@ -214,7 +241,7 @@ const decide = async (choice) => {
       text: parsed?.text ?? parsed?.reply ?? '(응답 없음)'
     })
 
-    pendingEvent.value = pickInvestEvent(parsed)
+    pendingEvent.value = pickEvent(parsed)
   } catch (e) {
     chats.value.push({ role: 'bot', text: '선택 전송 실패' })
     console.error(e)
@@ -291,9 +318,14 @@ const decide = async (choice) => {
         </div>
       </header>
 
-      <section class="chat" ref="boxRef" @scroll="updateScrollState">
-        <!-- ✅ 위쪽 더보기 버튼 (원하면 자동 로드만 쓰고 이 버튼은 빼도 됨) -->
-        <div class="loadMoreWrap" v-if="canLoadMore">
+      <section
+          class="chat"
+          :class="{ ready: chatReady }"
+          ref="boxRef"
+          @scroll="updateScrollState"
+      >
+
+      <div class="loadMoreWrap" v-if="canLoadMore">
           <button class="loadMoreBtn" type="button" @click="loadOlder">
             이전 메시지 더보기
           </button>
@@ -315,7 +347,7 @@ const decide = async (choice) => {
         <div v-if="pendingEvent" class="eventCard">
           <div class="eventTitle">선택 이벤트</div>
           <div class="eventQ">
-            {{ pendingEvent?.value?.question ?? '투자 하실래요?' }}
+            {{ pendingEvent?.question ?? '선택하시겠어요?' }}
           </div>
           <div class="eventBtns">
             <button class="yes" @click="decide('YES')">예</button>
@@ -323,7 +355,6 @@ const decide = async (choice) => {
           </div>
         </div>
 
-        <!-- 새 메시지 버튼 -->
         <button
             v-if="showNewMsgBtn"
             class="newMsgBtn"
@@ -457,7 +488,7 @@ const decide = async (choice) => {
 .chat {
   position: relative;
   flex: 1;
-  overflow-y: auto;
+  overflow-y: hidden;
   padding: 14px;
   min-height: 0;
   background:
@@ -466,7 +497,10 @@ const decide = async (choice) => {
       #fafafa;
 }
 
-/* ✅ 위 더보기 */
+.chat.ready {
+  overflow-y: auto;
+}
+/* 위 더보기 */
 .loadMoreWrap {
   position: sticky;
   top: 0;
