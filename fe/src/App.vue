@@ -4,7 +4,11 @@
       <!-- 풀블리드 페이지 -->
       <component
           :is="Component"
-          v-if="route.path === '/' || route.path.startsWith('/chat')"
+          v-if="
+          route.path === '/' ||
+          route.path.startsWith('/chat') ||
+          route.path.startsWith('/about')
+        "
       />
 
       <!-- 그 외 페이지는 가운데 컨테이너 -->

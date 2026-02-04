@@ -51,7 +51,7 @@ const start = () => {
         <div class="logo">SIM-SCAM : ESCAPE</div>
         <div class="sub">Scam Conversation Escape Simulation</div>
       </div>
-      <span class="chip">DEMO</span>
+      <RouterLink to="/about" class="chip link">ABOUT</RouterLink>
     </header>
 
     <!-- 메인 -->
@@ -157,6 +157,11 @@ const start = () => {
   margin-top: 6px;
   font-size: 13px;
   color: rgba(238, 242, 255, 0.62);
+}
+
+.link{
+  text-decoration: none;
+  color: inherit;
 }
 
 .chip {
