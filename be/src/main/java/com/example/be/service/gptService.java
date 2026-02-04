@@ -63,7 +63,7 @@ public class gptService {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(apiKey);
 
-        // ✅ role/content 정규화 (bot -> assistant 등)
+        // role/content 정규화
         List<Map<String, String>> normalized = new ArrayList<>();
         for (Map<String, String> m : messages) {
             String role = m.get("role");
