@@ -37,7 +37,7 @@ public class testChatService {
             Map<String, String> system = new HashMap<>();
             system.put("role", "system");
             system.put("content",
-                    promptLoader.load("prompts/romance_scam_prompt_test.txt"));
+                    promptLoader.load("prompts/romance_scam_money.txt"));
             messages.add(system);
         }
 
@@ -68,7 +68,7 @@ public class testChatService {
             String gptEvent = (String) replyMap.get("event");
             String currentEvent = testChatMemory.getCurrentEvent(sessionId);
 
-            if (gptEvent != null && !gptEvent.equals(currentEvent)) {
+            if (gptEvent != null && currentEvent == null) {
                 testChatMemory.setCurrentEvent(sessionId, gptEvent);
                 testChatMemory.addEventLog(sessionId, gptEvent, null);
             }
