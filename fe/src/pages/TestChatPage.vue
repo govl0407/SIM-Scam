@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
-import { sendChat } from '../api/chatApi'
+import { sendChat, sendDecision, getSessionId } from '../api/chatApi'
 
 const input = ref('')
 const chats = ref([])
@@ -10,11 +10,9 @@ const inputRef = ref(null)
 
 const showInfo = ref(false)
 
-
 const atBottom = ref(true)
 const showNewMsgBtn = ref(false)
 const newMsgCount = ref(0)
-
 
 const MAX_RENDER = 50
 const LOAD_STEP = 30
@@ -31,33 +29,45 @@ const visibleChats = computed(() => {
   return chats.value.slice(startIndex.value)
 })
 
+/** 로컬스토리지 기반 */
+const sessionId = ref(getSessionId())
 
-const sessionId = ref('test-session')
 const pendingEvent = ref(null)
 
+/** 응답이 string이면 파싱 */
 function normalizeResponse(data) {
   if (typeof data === 'string') {
     try { return JSON.parse(data) } catch { return { text: data } }
   }
-  return data
+  return data ?? {}
 }
 
-function pickInvestEvent(parsed) {
-  if (Array.isArray(parsed?.events)) {
-    return parsed.events.find(e => e?.type === 'INVEST_REQUEST') ?? null
-  }
-  if (typeof parsed?.events === 'string') {
-    return { type: 'INVEST_REQUEST', value: { eventId: 'TEMP_EVENT', question: parsed.events } }
-  }
+function normalizeServerPayload(parsed) {
+  const text =
+      parsed?.text ??
+      parsed?.reply ??
+      parsed?.message ??
+      '(응답 없음)'
+
+  const image = parsed?.image ?? null
+  const event = parsed?.event ?? null
+  const end = !!parsed?.end
+  const stage = parsed?.['단계'] ?? parsed?.stage ?? null
+  const eventLogs = parsed?.eventLogs ?? {}
+
+  return { text, image, event, end, stage, eventLogs }
+}
+
+function pickEvent(parsed) {
+  // 현재 샘플: event: null 또는 "INVEST_REQUEST" 같은 문자열을 기대
+  if (typeof parsed?.event === 'string' && parsed.event.trim()) return parsed.event.trim()
   return null
 }
-
 
 const focusInput = async () => {
   await nextTick()
   inputRef.value?.focus?.({ preventScroll: true })
 }
-
 
 function isNearBottom(el, threshold = 160) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
@@ -68,13 +78,11 @@ function resetNewMsg() {
   showNewMsgBtn.value = false
 }
 
-
 function updateScrollState() {
   const el = boxRef.value
   if (!el) return
 
   atBottom.value = isNearBottom(el)
-
 
   if (atBottom.value) resetNewMsg()
 
@@ -82,7 +90,6 @@ function updateScrollState() {
     loadOlderAuto()
   }
 }
-
 
 let scrollRaf = 0
 
@@ -113,7 +120,6 @@ async function scrollToBottom(forceSmooth = false) {
 function jumpToBottom() {
   scrollToBottom(true)
 }
-
 
 let loadingOlder = false
 
@@ -172,6 +178,7 @@ onMounted(async () => {
   await scrollToBottom(false)
 })
 
+
 const send = async () => {
   const text = input.value.trim()
   if (!text) return
@@ -181,15 +188,19 @@ const send = async () => {
   focusInput()
 
   try {
-    const data = await sendChat(text)
+    const data = await sendChat(sessionId.value, text)
     const parsed = normalizeResponse(data)
+    const r = normalizeServerPayload(parsed)
 
     chats.value.push({
       role: 'bot',
-      text: parsed?.text ?? parsed?.reply ?? '(응답 없음)'
+      text: r.text,
+      image: r.image,
+      stage: r.stage,
+      end: r.end,
     })
 
-    pendingEvent.value = pickInvestEvent(parsed)
+    pendingEvent.value = pickEvent(parsed)
   } catch (e) {
     chats.value.push({ role: 'bot', text: '연결 실패' })
     console.error(e)
@@ -199,22 +210,31 @@ const send = async () => {
 }
 
 const decide = async (choice) => {
+  const answer = choice === 'YES' ? 'yes' : 'no'
   const userText = choice === 'YES' ? '예' : '아니오'
 
+  // 선택 UI 반영
   chats.value.push({ role: 'user', text: userText })
+
+  const event = pendingEvent.value
   pendingEvent.value = null
   focusInput()
 
   try {
-    const data = await sendChat(userText)
+    // sendDecision 호출
+    const data = await sendDecision(sessionId.value, event, answer)
     const parsed = normalizeResponse(data)
+    const r = normalizeServerPayload(parsed)
 
     chats.value.push({
       role: 'bot',
-      text: parsed?.text ?? parsed?.reply ?? '(응답 없음)'
+      text: r.text,
+      image: r.image,
+      stage: r.stage,
+      end: r.end,
     })
 
-    pendingEvent.value = pickInvestEvent(parsed)
+    pendingEvent.value = pickEvent(parsed)
   } catch (e) {
     chats.value.push({ role: 'bot', text: '선택 전송 실패' })
     console.error(e)
@@ -255,7 +275,7 @@ const decide = async (choice) => {
           <img class="roomAvatar" src="/img/씹덕1.jpeg" alt="미아" />
           <div class="info">
             <div class="name">최정민</div>
-            <div class="status">online 🟢</div>
+            <div class="status">online </div>
           </div>
         </div>
 
@@ -292,7 +312,6 @@ const decide = async (choice) => {
       </header>
 
       <section class="chat" ref="boxRef" @scroll="updateScrollState">
-        <!-- ✅ 위쪽 더보기 버튼 (원하면 자동 로드만 쓰고 이 버튼은 빼도 됨) -->
         <div class="loadMoreWrap" v-if="canLoadMore">
           <button class="loadMoreBtn" type="button" @click="loadOlder">
             이전 메시지 더보기
@@ -308,6 +327,14 @@ const decide = async (choice) => {
         >
           <div class="bubble">
             <div class="text">{{ c.text }}</div>
+
+            <!-- 이미지가 있으면 보여주기 (선택) -->
+            <img
+                v-if="c.image"
+                class="bubbleImg"
+                :src="`http://localhost:8080/${c.image}`"
+                alt=""
+            />
           </div>
         </div>
 
@@ -315,7 +342,7 @@ const decide = async (choice) => {
         <div v-if="pendingEvent" class="eventCard">
           <div class="eventTitle">선택 이벤트</div>
           <div class="eventQ">
-            {{ pendingEvent?.value?.question ?? '투자 하실래요?' }}
+            {{ pendingEvent }} 에 대해 선택해줘
           </div>
           <div class="eventBtns">
             <button class="yes" @click="decide('YES')">예</button>
@@ -348,6 +375,12 @@ const decide = async (choice) => {
 </template>
 
 <style scoped>
+.profile .roomAvatar {
+  box-shadow:
+      0 0 0 2px #fff,
+      0 0 0 4px #6ee7b7;
+}
+
 .dm {
   color: #111;
   height: 100dvh;
@@ -444,7 +477,6 @@ const decide = async (choice) => {
   height: 40px;
   padding: 0;
   cursor: pointer;
-
   display: flex;
   align-items: center;
   justify-content: center;
@@ -515,6 +547,15 @@ const decide = async (choice) => {
 .row.me .bubble { background: #efe9ff; border-color: #e1d6ff; }
 .text { font-size: 14px; }
 
+.bubbleImg {
+  display: block;
+  margin-top: 10px;
+  max-width: 240px;
+  width: 100%;
+  height: auto !important;
+  max-height: none !important;
+}
+
 /* 이벤트 카드 */
 .eventCard {
   margin-top: 12px;
@@ -555,6 +596,7 @@ const decide = async (choice) => {
   font-weight: 800;
 }
 .newMsgBtn:hover { background: #fff; }
+
 
 /* 입력 */
 .composer {

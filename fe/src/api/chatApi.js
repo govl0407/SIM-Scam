@@ -2,11 +2,21 @@ import axios from "axios";
 
 const BASE = "http://localhost:8080";
 
+export function getSessionId() {
+    let sid = localStorage.getItem("sessionId");
+    if (!sid) {
+        sid = (crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
+        localStorage.setItem("sessionId", sid);
+    }
+    return sid;
+}
+
+
 // 일반 채팅 보내기
 export async function sendChat(sessionId, text) {
     const res = await axios.post(`${BASE}/api/chat/message`, {
         sessionId,
-        text,
+        message: text,
     });
     return res.data;
 }

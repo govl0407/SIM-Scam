@@ -25,7 +25,6 @@ public class chatController {
 
         String sessionId = "test-session";
         String strJson = chatService.chat(sessionId, request);
-
         try {
             // GPT가 준 JSON 문자열 → Map으로 변환
             return objectMapper.readValue(strJson, Map.class);
