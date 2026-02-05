@@ -30,9 +30,27 @@ public class chatController {
 
         String sessionId = "test-session";
         String strJson = chatService.chat(sessionId, request);
+
         try {
-            // GPT가 준 JSON 문자열 → Map으로 변환
-            return objectMapper.readValue(strJson, Map.class);
+            Map<String, Object> gptResponse =
+                    objectMapper.readValue(strJson, Map.class);
+
+            // ✅ 서버 상태 주입
+            gptResponse.put(
+                    "serverCurrentEvent",
+                    testChatMemory.getCurrentEvent(sessionId)
+            );
+            gptResponse.put(
+                    "serverEventLogs",
+                    testChatMemory.getEventLogs(sessionId)
+            );
+            gptResponse.put(
+                    "sessionId",
+                    sessionId
+            );
+
+            return gptResponse;
+
         } catch (Exception e) {
             throw new RuntimeException("GPT 응답 JSON 파싱 실패: " + strJson, e);
         }
@@ -43,13 +61,30 @@ public class chatController {
     ) {
         String sessionId = "test-session";
         String strJson = chatService.eventResponse(sessionId, request);
+
         try {
-            // GPT가 준 JSON 문자열 → Map으로 변환
-            return objectMapper.readValue(strJson, Map.class);
+            Map<String, Object> gptResponse =
+                    objectMapper.readValue(strJson, Map.class);
+
+            // ✅ 서버 기준 상태
+            gptResponse.put(
+                    "serverCurrentEvent",
+                    testChatMemory.getCurrentEvent(sessionId)
+            );
+            gptResponse.put(
+                    "serverEventLogs",
+                    testChatMemory.getEventLogs(sessionId)
+            );
+            gptResponse.put(
+                    "sessionId",
+                    sessionId
+            );
+
+            return gptResponse;
+
         } catch (Exception e) {
             throw new RuntimeException("GPT 응답 JSON 파싱 실패: " + strJson, e);
         }
-
     }
     @GetMapping("/event-logs")
     public Map<String, Object> getEventLogs(
