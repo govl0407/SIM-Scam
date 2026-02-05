@@ -57,12 +57,11 @@ function normalizeServerPayload(parsed) {
 
   return { text, image, event, end, stage, eventLogs }
 }
-
-function pickEvent(parsed) {
-  // 현재 샘플: event: null 또는 "INVEST_REQUEST" 같은 문자열을 기대
+function pickEventName(parsed) {
   if (typeof parsed?.event === 'string' && parsed.event.trim()) return parsed.event.trim()
   return null
 }
+
 
 const focusInput = async () => {
   await nextTick()
@@ -200,7 +199,11 @@ const send = async () => {
       end: r.end,
     })
 
-    pendingEvent.value = pickEvent(parsed)
+    const ev = pickEventName(parsed)
+    pendingEvent.value = ev
+        ? { event: ev, text: buildEventCardText(ev, r.text) }
+        : null
+
   } catch (e) {
     chats.value.push({ role: 'bot', text: '연결 실패' })
     console.error(e)
@@ -216,12 +219,17 @@ const decide = async (choice) => {
   // 선택 UI 반영
   chats.value.push({ role: 'user', text: userText })
 
-  const event = pendingEvent.value
+  const eventObj = pendingEvent.value
+  const event = eventObj?.event
   pendingEvent.value = null
   focusInput()
 
+  if (!event) {
+    chats.value.push({ role: 'bot', text: '선택 전송 실패: event 없음' })
+    return
+  }
+
   try {
-    // sendDecision 호출
     const data = await sendDecision(sessionId.value, event, answer)
     const parsed = normalizeResponse(data)
     const r = normalizeServerPayload(parsed)
@@ -234,7 +242,12 @@ const decide = async (choice) => {
       end: r.end,
     })
 
-    pendingEvent.value = pickEvent(parsed)
+
+    const ev2 = pickEventName(parsed)
+    pendingEvent.value = ev2
+        ? { event: ev2, text: buildEventCardText(ev2, r.text) }
+        : null
+
   } catch (e) {
     chats.value.push({ role: 'bot', text: '선택 전송 실패' })
     console.error(e)
@@ -242,6 +255,27 @@ const decide = async (choice) => {
     focusInput()
   }
 }
+
+function eventToQuestion(eventName) {
+  switch (eventName) {
+    case '금전요구': return '요구에 따라 송금하시겠습니까?'
+    case '개인정보요구': return '요구에 따라 개인정보를 제공하시겠습니까?'
+    case '투자권유': return '요구에 따라 투자를 진행하시겠습니까?'
+    case '앱설치유도': return '요구에 따라 앱을 설치하시겠습니까?'
+    case '사이트가입유도': return '요구에 따라 사이트에 가입하시겠습니까?'
+    default: return '요구에 따르시겠습니까?'
+  }
+}
+
+function buildEventCardText(eventName, lastBotText) {
+  const question = eventToQuestion(eventName)
+  const detail = (lastBotText ?? '').trim()
+  // 디테일 너무 길면 자르기(선택)
+  const short = detail.length > 120 ? detail.slice(0, 120) + '…' : detail
+  return short ? `${question}\n\n요청 내용: ${short}` : question
+}
+
+
 </script>
 
 <template>
@@ -342,7 +376,7 @@ const decide = async (choice) => {
         <div v-if="pendingEvent" class="eventCard">
           <div class="eventTitle">선택 이벤트</div>
           <div class="eventQ">
-            {{ pendingEvent }} 에 대해 선택해줘
+            {{ eventToQuestion(pendingEvent.event ?? pendingEvent) }}
           </div>
           <div class="eventBtns">
             <button class="yes" @click="decide('YES')">예</button>
@@ -534,14 +568,15 @@ const decide = async (choice) => {
 .row.them { justify-content: flex-start; }
 .row.me { justify-content: flex-end; }
 .bubble {
+  display: inline-flex;
   max-width: 58%;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-radius: 16px;
   border: 1px solid #e9e9e9;
   background: #fff;
   white-space: pre-wrap;
   word-break: break-word;
-  line-height: 1.35;
+  line-height: 1.25;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
 }
 .row.me .bubble { background: #efe9ff; border-color: #e1d6ff; }

@@ -3,6 +3,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 import StartView from '../pages/StartPage.vue'
 import TestChatPage from '../pages/TestChatPage.vue'
 import AboutPage from '../pages/AboutPage.vue'
+import ScenarioSelectPage from "../pages/ScenarioSelectPage.vue";
+
 
 const router = createRouter({
     history: createWebHistory(),
@@ -22,6 +24,11 @@ const router = createRouter({
             name: 'About',
             component: AboutPage        // ABOUT 설명 페이지
         },
+        {
+            path: "/scenario",
+            name: "ScenarioSelect",
+            component: ScenarioSelectPage,
+        }
     ],
 })
 
