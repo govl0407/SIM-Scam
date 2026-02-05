@@ -32,13 +32,11 @@ public class testChatMemory {
     // 현재 이벤트의 사용자 응답 업데이트
     public void updateCurrentEventMessage(
             String sessionId,
-            String event,
             String userAnswer
     ) {
-        Map<String, String> eventLogs = getEventLogs(sessionId);
-
-        if (eventLogs.containsKey(event)) {
-            eventLogs.put(event, userAnswer);
+        String label = findCurrentEventLabel(sessionId);
+        if (label != null) {
+            getEventLogs(sessionId).put(label, userAnswer);
         }
     }
     //이벤트 로그
@@ -62,7 +60,17 @@ public class testChatMemory {
         log.put("text", text);
         getChatLogs(sessionId).add(log);
     }
+    public String findCurrentEventLabel(String sessionId) {
+        String currentEvent = getCurrentEvent(sessionId);
+        if (currentEvent == null) return null;
 
+        for (String key : getEventLogs(sessionId).keySet()) {
+            if (key.endsWith("_" + currentEvent)) {
+                return key;
+            }
+        }
+        return null;
+    }
 
 
     public void clear(String sessionId) {

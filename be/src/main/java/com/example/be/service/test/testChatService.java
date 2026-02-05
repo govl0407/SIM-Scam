@@ -69,8 +69,18 @@ public class testChatService {
             String currentEvent = testChatMemory.getCurrentEvent(sessionId);
 
             if (gptEvent != null && currentEvent == null) {
+
+                // 이벤트 라벨 생성 (개인정보요구_1, _2 ...)
+                String eventLabel = nextEventLabel(
+                        testChatMemory.getEventLogs(sessionId),
+                        gptEvent
+                );
+
+                // currentEvent는 번호 없는 이벤트명만
                 testChatMemory.setCurrentEvent(sessionId, gptEvent);
-                testChatMemory.addEventLog(sessionId, gptEvent, null);
+
+                // 로그에는 n_이벤트명 저장
+                testChatMemory.addEventLog(sessionId, eventLabel, null);
             }
             replyMap.put(
                     "eventLogs",
@@ -102,14 +112,20 @@ public class testChatService {
         system.put("content", content);
         messages.add(system);
     }
-
+    private String nextEventLabel(
+            Map<String, String> eventLogs,
+            String eventName
+    ) {
+        int nextIndex = eventLogs.size() + 1;
+        return nextIndex + "_" + eventName;
+    }
     public String eventResponse(String sessionId, EventResponseDto request) {
 
         // 1️⃣ 기존 대화 기록 불러오기
         List<Map<String, String>> messages =
                 testChatMemory.getChatLogs(sessionId);
 
-        // 2️⃣ 이벤트 응답을 GPT가 이해할 수 있게 전달
+        // 2️⃣ EVENT_RESPONSE 메시지 추가
         String eventContent =
                 "[EVENT_RESPONSE]\n" +
                         "{\n" +
@@ -131,38 +147,29 @@ public class testChatService {
                 "content", reply
         ));
 
-        // 5️⃣ GPT 응답 처리
         try {
             Map<String, Object> replyMap =
                     objectMapper.readValue(reply, Map.class);
 
-            String gptEvent = (String) replyMap.get("event");
             String currentEvent = testChatMemory.getCurrentEvent(sessionId);
 
-            // ✅ 5-1. 기존 이벤트 결과 업데이트 (user answer 저장)
+            // ✅ 5-1. 기존 이벤트 결과 저장 (n_이벤트명 찾아서 yes/no 기록)
             if (currentEvent != null) {
                 testChatMemory.updateCurrentEventMessage(
                         sessionId,
-                        currentEvent,
                         request.getAnswer()
                 );
             }
 
-            // ✅ 5-2. GPT가 새로운 이벤트를 반환한 경우
-            if (gptEvent != null && !gptEvent.isBlank()) {
+            // ✅ 5-2. 이벤트는 여기서 종료 (eventResponse의 역할)
+            testChatMemory.setCurrentEvent(sessionId, null);
 
-                // 이벤트 변경
-                testChatMemory.setCurrentEvent(sessionId, gptEvent);
-                testChatMemory.addEventLog(sessionId, gptEvent, null);
-
-            } else {
-                // ✅ 5-3. 이벤트 종료
-                testChatMemory.setCurrentEvent(sessionId, null);
-            }
+            // ✅ 5-3. 최신 eventLogs 포함해서 반환
             replyMap.put(
                     "eventLogs",
                     testChatMemory.getEventLogs(sessionId)
             );
+
             return objectMapper.writeValueAsString(replyMap);
 
         } catch (Exception e) {
