@@ -1,17 +1,77 @@
 package com.example.be.service;
 
 import org.springframework.stereotype.Service;
-import java.util.*;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 @Service
 public class ChatMemory {
 
-    // sessionId → 대화 목록
-    private final Map<String, List<Map<String, String>>> memory = new HashMap<>();//대화를 저장하는 해시맵
+    private final Map<String, Map<String, Object>> memory = new HashMap<>();
 
-    public List<Map<String, String>> getMessages(String sessionId) {
-        return memory.computeIfAbsent(sessionId, k -> new ArrayList<>());//해당 세션 아이디의 대화가 없으면 빈 배열 반환
+    public Map<String, Object> getSession(String sessionId) {
+        return memory.computeIfAbsent(sessionId, id -> {
+            Map<String, Object> session = new HashMap<>();
+            session.put("currentEvent", null);
+            session.put("eventLogs", new HashMap<String, String>());
+            session.put("chatLogs", new ArrayList<Map<String, String>>());
+            session.put("prompt", null);
+            return session;
+        });
     }
+
+    //
+    public String getCurrentEvent(String sessionId) {
+        return (String) getSession(sessionId).get("currentEvent");
+    }
+    public void setCurrentEvent(String sessionId, String event) {
+        getSession(sessionId).put("currentEvent", event);
+    }
+    // 현재 이벤트의 사용자 응답 업데이트
+    public void updateCurrentEventMessage(
+            String sessionId,
+            String userAnswer
+    ) {
+        String label = findCurrentEventLabel(sessionId);
+        if (label != null) {
+            getEventLogs(sessionId).put(label, userAnswer);
+        }
+    }
+    //이벤트 로그
+    @SuppressWarnings("unchecked")
+    public Map<String, String> getEventLogs(String sessionId) {
+        return (Map<String, String>) getSession(sessionId).get("eventLogs");
+    }
+    public void addEventLog(String sessionId, String event, String result) {
+        getEventLogs(sessionId).put(event, result);
+    }
+
+    //채팅
+    @SuppressWarnings("unchecked")
+    public List<Map<String, String>> getChatLogs(String sessionId) {
+        return (List<Map<String, String>>) getSession(sessionId).get("chatLogs");
+    }
+
+    public void addChatLog(String sessionId, String role, String text) {
+        Map<String, String> log = new HashMap<>();
+        log.put("role", role);
+        log.put("text", text);
+        getChatLogs(sessionId).add(log);
+    }
+    public String findCurrentEventLabel(String sessionId) {
+        String currentEvent = getCurrentEvent(sessionId);
+        if (currentEvent == null) return null;
+
+        for (String key : getEventLogs(sessionId).keySet()) {
+            if (key.endsWith("_" + currentEvent)) {
+                return key;
+            }
+        }
+        return null;
+    }
+
 
     public void clear(String sessionId) {
         memory.remove(sessionId);

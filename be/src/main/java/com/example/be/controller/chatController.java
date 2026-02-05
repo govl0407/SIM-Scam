@@ -2,28 +2,27 @@ package com.example.be.controller;
 
 import com.example.be.dto.EventResponseDto;
 import com.example.be.dto.userMessageDto;
-import com.example.be.service.test.testChatMemory;
-import com.example.be.service.test.testChatService;
+import com.example.be.service.ChatMemory;
+import com.example.be.service.ChatService;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.web.bind.annotation.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 @CrossOrigin(origins = "http://localhost:5173", allowCredentials = "true")
 @RestController
 @RequestMapping("/api/chat")
 public class chatController {
 
-    private final testChatService chatService;
-    private final testChatMemory testChatMemory;
+    private final ChatService chatService;
+    private final ChatMemory ChatMemory;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public chatController(testChatService chatService, testChatMemory testChatMemory) {
+    public chatController(ChatService chatService, ChatMemory ChatMemory) {
         this.chatService = chatService;
-        this.testChatMemory = testChatMemory;
+        this.ChatMemory = ChatMemory;
     }
 
     @PostMapping("/message")
@@ -42,7 +41,7 @@ public class chatController {
             filteredResponse.put("image", fullGptResponse.get("image"));
             filteredResponse.put("end", fullGptResponse.get("end"));
             filteredResponse.put("단계", fullGptResponse.get("단계"));
-            filteredResponse.put("currentEvent", testChatMemory.getCurrentEvent(sessionId));
+            filteredResponse.put("currentEvent", ChatMemory.getCurrentEvent(sessionId));
 
             return filteredResponse;
 
@@ -66,8 +65,8 @@ public class chatController {
             filteredResponse.put("text", fullGptResponse.get("text"));
             filteredResponse.put("image", fullGptResponse.get("image"));
             filteredResponse.put("단계", fullGptResponse.get("단계"));
-            filteredResponse.put("eventLogs", testChatMemory.getEventLogs(sessionId));
-            filteredResponse.put("CurrentEvent", testChatMemory.getCurrentEvent(sessionId));
+            filteredResponse.put("eventLogs", ChatMemory.getEventLogs(sessionId));
+            filteredResponse.put("CurrentEvent", ChatMemory.getCurrentEvent(sessionId));
 
             return filteredResponse;
 
@@ -81,7 +80,7 @@ public class chatController {
         String sessionId = session.getId();
 
         // 1. 서버 메모리(Chat Memory)에서 해당 세션 데이터 삭제
-        testChatMemory.clear(sessionId);
+        ChatMemory.clear(sessionId);
 
         // 2. 세션 무효화 (기존 세션 ID를 버리고 다음 요청 시 새로 생성)
         session.invalidate();
