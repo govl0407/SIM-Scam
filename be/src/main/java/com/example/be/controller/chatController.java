@@ -12,8 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = "http://localhost:5173", allowCredentials = "true")
 @RestController
 @RequestMapping("/api/chat")
 public class chatController {
@@ -75,5 +74,22 @@ public class chatController {
         } catch (Exception e) {
             throw new RuntimeException("이벤트 응답 처리 실패", e);
         }
+    }
+
+    @GetMapping("/reset")
+    public Map<String, String> resetChat(HttpSession session) {
+        String sessionId = session.getId();
+
+        // 1. 서버 메모리(Chat Memory)에서 해당 세션 데이터 삭제
+        testChatMemory.clear(sessionId);
+
+        // 2. 세션 무효화 (기존 세션 ID를 버리고 다음 요청 시 새로 생성)
+        session.invalidate();
+
+        Map<String, String> response = new HashMap<>();
+        response.put("status", "success");
+        response.put("message", "채팅 기록과 세션이 초기화되었습니다.");
+
+        return response;
     }
 }
