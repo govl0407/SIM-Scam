@@ -1,7 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import StartView from '../pages/StartView.vue'
+import StartView from '../pages/StartPage.vue'
 import TestChatPage from '../pages/TestChatPage.vue'
+import AboutPage from '../pages/AboutPage.vue'
 
 const router = createRouter({
     history: createWebHistory(),
@@ -15,6 +16,11 @@ const router = createRouter({
             path: '/chat',
             name: 'Chat',
             component: TestChatPage // DM 채팅 페이지
+        },
+        {
+            path: '/about',
+            name: 'About',
+            component: AboutPage        // ABOUT 설명 페이지
         },
     ],
 })
