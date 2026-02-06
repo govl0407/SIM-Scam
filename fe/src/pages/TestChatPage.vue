@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
-import { sendChat, sendDecision, getSessionId } from '../api/chatApi'
+import { sendChat, sendDecision } from '../api/chatApi'
 import { useRouter, useRoute } from 'vue-router'
 
 const router = useRouter()
@@ -35,35 +35,26 @@ const visibleChats = computed(() => {
   return chats.value.slice(startIndex.value)
 })
 
-//로컬스토리지 기반
-const sessionId = ref(getSessionId())
 const pendingEvent = ref(null)
 
 //유저/시나리오 헬퍼 (유저별 저장용)
 function getUserId() {
-  // 로그인 붙이면 로그인 성공 시 여기 값을 넣어두면 됨:
-  // localStorage.setItem("simscam_user_id", "<로그인유저id>")
   return localStorage.getItem('simscam_user_id') || 'guest'
 }
 
 function getScenarioId() {
-  // /chat/:id 라우팅이면 params.id 사용
   const pid = route.params?.id
   if (typeof pid === 'string' && pid.trim()) return pid.trim()
 
-  // /chat?scenario=romance 형태면 query.scenario 사용
   const qs = route.query?.scenario
   if (typeof qs === 'string' && qs.trim()) return qs.trim()
 
-  // 유저별 마지막 시나리오
   const userId = getUserId()
   const last = localStorage.getItem(`simscam_last_scenario:${userId}`)
   if (last) return last
 
   return 'default'
 }
-
-
 
 function saveLastScenario(userId, scenarioId) {
   localStorage.setItem(`simscam_last_scenario:${userId}`, scenarioId)
@@ -83,8 +74,6 @@ function normalizeServerPayload(parsed) {
       parsed?.reply ??
       parsed?.message ??
       '(응답 없음)'
-
-  const image = parsed?.image ?? null
 
   const currentEvent =
       parsed?.currentEvent ??
@@ -107,7 +96,7 @@ function normalizeServerPayload(parsed) {
       parsed?.eventLogs ??
       {}
 
-  return { text, image, currentEvent, event, end, stage, eventLogs }
+  return { text, currentEvent, event, end, stage, eventLogs }
 }
 
 function pickEventName(parsed) {
@@ -122,7 +111,6 @@ function nextStepFromLogs(logs) {
 }
 
 function mergeLogs(serverLogs = {}, localLogs = {}) {
-  // server 먼저 깔고 local로 덮어쓰기
   return { ...(serverLogs || {}), ...(localLogs || {}) }
 }
 
@@ -149,7 +137,6 @@ function updateScrollState() {
   if (!el) return
 
   atBottom.value = isNearBottom(el)
-
   if (atBottom.value) resetNewMsg()
 
   if (el.scrollTop < 30) {
@@ -158,7 +145,6 @@ function updateScrollState() {
 }
 
 let scrollRaf = 0
-
 async function scrollToBottom(forceSmooth = false) {
   await nextTick()
   const el = boxRef.value
@@ -187,7 +173,6 @@ function jumpToBottom() {
 }
 
 let loadingOlder = false
-
 async function loadOlder() {
   const el = boxRef.value
   if (!el) return
@@ -241,7 +226,6 @@ onMounted(async () => {
   await scrollToBottom(false)
 })
 
-//end가 와도 “이벤트가 없으면” 결과로 보내지 않기 + (유저별/시나리오별/createdAt 저장)
 function goResultIfNeeded(parsed, r) {
   const shouldEnd = !!(r?.end || parsed?.end)
   if (!shouldEnd) return false
@@ -262,23 +246,16 @@ function goResultIfNeeded(parsed, r) {
   saveLastScenario(userId, scenarioId)
 
   const resultPayload = {
-    userId,                // 유저별
-    scenarioId,            // 시나리오별
+    userId,
+    scenarioId,
     createdAt: Date.now(),
-
     currentEvent: (parsed?.currentEvent ?? parsed?.CurrentEvent ?? r?.currentEvent ?? null),
     eventLogs: mergedLogs,
-    sessionId: (parsed?.sessionId ?? sessionId.value ?? null),
     stage: (parsed?.['단계'] ?? parsed?.stage ?? r?.stage ?? null),
   }
 
-  // 유저+시나리오별 결과 저장
   localStorage.setItem(`scam_result:${userId}:${scenarioId}`, JSON.stringify(resultPayload))
-
-  // 유저별 최신 결과(홈/마이페이지에서 “최근 체험” 보여줄 때 유용)
   localStorage.setItem(`scam_result_latest:${userId}`, JSON.stringify(resultPayload))
-
-  // (옵션) 기존 키도 남겨서 예전 ResultPage fallback 호환
   localStorage.setItem('scam_result', JSON.stringify(resultPayload))
 
   router.push({ path: '/result', state: { result: resultPayload } })
@@ -294,7 +271,7 @@ const send = async () => {
   focusInput()
 
   try {
-    const data = await sendChat(sessionId.value, text)
+    const data = await sendChat(text)
     const parsed = normalizeResponse(data)
     const r = normalizeServerPayload(parsed)
 
@@ -303,7 +280,6 @@ const send = async () => {
     chats.value.push({
       role: 'bot',
       text: r.text,
-      image: r.image,
       stage: r.stage,
       end: r.end,
     })
@@ -337,13 +313,11 @@ const decide = async (choice) => {
     meta: { kind: 'eventAction', event, answer }
   })
 
-
-
   const step = nextStepFromLogs(localEventLogs.value)
   localEventLogs.value[`${step}_${event}`] = answer
 
   try {
-    const data = await sendDecision(sessionId.value, event, answer)
+    const data = await sendDecision(event, answer)
     const parsed = normalizeResponse(data)
     const r = normalizeServerPayload(parsed)
 
@@ -352,7 +326,6 @@ const decide = async (choice) => {
     chats.value.push({
       role: 'bot',
       text: r.text,
-      image: r.image,
       stage: r.stage,
       end: r.end,
     })
@@ -380,30 +353,29 @@ function eventToQuestion(eventName) {
 }
 
 function eventToActionText(eventName, answer) {
-  const yes = answer === "yes";
+  const yes = answer === "yes"
 
   switch (eventName) {
     case "금전요구":
-      return yes ? "요청대로 돈을 송금했습니다." : "송금 요청을 거절했습니다.";
+      return yes ? "요청대로 돈을 송금했습니다." : "송금 요청을 거절했습니다."
     case "개인정보요구":
-      return yes ? "요청대로 개인정보를 전달했습니다." : "개인정보 제공을 거절했습니다.";
+      return yes ? "요청대로 개인정보를 전달했습니다." : "개인정보 제공을 거절했습니다."
     case "투자권유":
-      return yes ? "요청대로 투자를 진행했습니다." : "투자 제안을 거절했습니다.";
+      return yes ? "요청대로 투자를 진행했습니다." : "투자 제안을 거절했습니다."
     case "앱설치유도":
-      return yes ? "요청대로 앱을 설치했습니다." : "앱 설치를 거절했습니다.";
+      return yes ? "요청대로 앱을 설치했습니다." : "앱 설치를 거절했습니다."
     case "사이트가입유도":
-      return yes ? "요청대로 사이트에 가입했습니다." : "사이트 가입을 거절했습니다.";
+      return yes ? "요청대로 사이트에 가입했습니다." : "사이트 가입을 거절했습니다."
     default:
-      return yes ? "요청을 수락했습니다." : "요청을 거절했습니다.";
+      return yes ? "요청을 수락했습니다." : "요청을 거절했습니다."
   }
 }
-
-
 
 function buildEventCardText(eventName) {
   return eventToQuestion(eventName)
 }
 </script>
+
 
 
 <template>
@@ -495,12 +467,6 @@ function buildEventCardText(eventName) {
             <div class="bubble">
               <div class="text">{{ c.text }}</div>
 
-              <img
-                  v-if="c.image"
-                  class="bubbleImg"
-                  :src="`http://localhost:8080/${c.image}`"
-                  alt=""
-              />
             </div>
           </div>
         </div>
@@ -772,15 +738,6 @@ function buildEventCardText(eventName) {
   line-height: 1.45;
 }
 .row.me .bubble { background: #efe9ff; border-color: #e1d6ff; }
-
-.bubbleImg {
-  display: block;
-  margin-top: 10px;
-  max-width: 240px;
-  width: 100%;
-  height: auto !important;
-  max-height: none !important;
-}
 
 /* 이벤트 카드 */
 .eventCard {
