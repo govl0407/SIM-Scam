@@ -18,16 +18,8 @@ const tracks = [
     label: "Job",
     title: "해외 취업 제안 시뮬레이션",
     one: "합격은 쉬워 보여도, 요구는 즉시 시작됩니다.",
-    desc: "고연봉/해외 근무 제안 → 빠른 합격 → 항공권/숙소 제공 → 일정/이동 통제 시도 ",
+    desc: "고연봉/해외 근무 제안 → 빠른 합격 → 항공권/숙소 제공 → 일정/이동 통제 시도",
     tone: "violet",
-  },
-  {
-    id: "invest",
-    label: "Invest",
-    title: "투자 권유 시뮬레이션",
-    one: "수익 인증 뒤엔, 더 큰 입금이 따라옵니다.",
-    desc: "소액 수익 → 신뢰 형성 → 추가 입금 압박 → 회수 불가",
-    tone: "blue",
   },
 ];
 
@@ -42,10 +34,8 @@ const start = () => {
 
 <template>
   <main class="screen">
-    <!-- 배경 레이어(전체 화면) -->
     <div class="bg" aria-hidden="true" />
 
-    <!-- 상단 바 -->
     <header class="top">
       <div class="brand">
         <div class="logo">SIM-SCAM : ESCAPE</div>
@@ -54,7 +44,6 @@ const start = () => {
       <RouterLink to="/about" class="chip link">ABOUT</RouterLink>
     </header>
 
-    <!-- 메인 -->
     <section class="hero">
       <div class="copy">
         <div class="kicker">PROLOGUE</div>
@@ -75,7 +64,6 @@ const start = () => {
         </div>
       </div>
 
-      <!-- 선택 패널 -->
       <aside class="panel">
         <div class="panel-head">
           <div class="panel-title">TRACK SELECT</div>
@@ -116,7 +104,6 @@ const start = () => {
 </template>
 
 <style scoped>
-/* ===== 화면 전체 ===== */
 .screen {
   min-height: 100vh;
   position: relative;
@@ -125,7 +112,6 @@ const start = () => {
   overflow: hidden;
 }
 
-/* 배경을 “전체 화면”으로 깔기 (가운데만 안 보이게) */
 .bg {
   position: fixed;
   inset: 0;
@@ -137,7 +123,6 @@ const start = () => {
       linear-gradient(180deg, #0b0f1f, #131a37);
 }
 
-/* ===== 상단 ===== */
 .top {
   max-width: 1120px;
   margin: 0 auto;
@@ -159,7 +144,7 @@ const start = () => {
   color: rgba(238, 242, 255, 0.62);
 }
 
-.link{
+.link {
   text-decoration: none;
   color: inherit;
 }
@@ -173,7 +158,6 @@ const start = () => {
   background: rgba(255, 255, 255, 0.06);
 }
 
-/* ===== 메인 레이아웃 ===== */
 .hero {
   max-width: 1120px;
   margin: 26px auto 0;
@@ -183,7 +167,6 @@ const start = () => {
   align-items: start;
 }
 
-/* ===== 좌측 카피 ===== */
 .copy {
   padding: 10px 4px;
 }
@@ -237,7 +220,6 @@ const start = () => {
   box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.06);
 }
 
-/* ===== 우측 패널 ===== */
 .panel {
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -265,17 +247,17 @@ const start = () => {
   color: rgba(238, 242, 255, 0.62);
 }
 
-/* ===== 트랙 카드 ===== */
+/* ✅ 2개 트랙용: 카드 간격/패딩 살짝 조정해서 “텅 빈 느낌” 줄임 */
 .cards {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin-top: 12px;
 }
 
 .card {
   text-align: left;
   border-radius: 16px;
-  padding: 14px;
+  padding: 16px;
   cursor: pointer;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(0, 0, 0, 0.16);
@@ -341,12 +323,9 @@ const start = () => {
   font-weight: 900;
 }
 
-/* 트랙별 은은한 포인트 */
 .card.pink.on { box-shadow: 0 22px 70px rgba(255, 79, 180, 0.10); }
 .card.violet.on { box-shadow: 0 22px 70px rgba(168, 107, 255, 0.12); }
-.card.blue.on { box-shadow: 0 22px 70px rgba(122, 149, 255, 0.12); }
 
-/* ===== CTA ===== */
 .cta {
   width: 100%;
   margin-top: 14px;
@@ -372,7 +351,6 @@ const start = () => {
   font-weight: 900;
 }
 
-/* ===== 하단 안내 ===== */
 .notice {
   margin-top: 12px;
   font-size: 12px;
@@ -381,7 +359,6 @@ const start = () => {
   padding-top: 12px;
 }
 
-/* ===== 반응형 ===== */
 @media (max-width: 980px) {
   .hero {
     grid-template-columns: 1fr;

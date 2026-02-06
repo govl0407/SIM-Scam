@@ -1,6 +1,12 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { sendChat, sendDecision, getSessionId } from '../api/chatApi'
+import { useRouter, useRoute } from 'vue-router'
+
+const router = useRouter()
+const route = useRoute()
+
+const localEventLogs = ref({})
 
 const input = ref('')
 const chats = ref([])
@@ -29,12 +35,41 @@ const visibleChats = computed(() => {
   return chats.value.slice(startIndex.value)
 })
 
-/** 로컬스토리지 기반 */
+//로컬스토리지 기반
 const sessionId = ref(getSessionId())
-
 const pendingEvent = ref(null)
 
-/** 응답이 string이면 파싱 */
+//유저/시나리오 헬퍼 (유저별 저장용)
+function getUserId() {
+  // 로그인 붙이면 로그인 성공 시 여기 값을 넣어두면 됨:
+  // localStorage.setItem("simscam_user_id", "<로그인유저id>")
+  return localStorage.getItem('simscam_user_id') || 'guest'
+}
+
+function getScenarioId() {
+  // /chat/:id 라우팅이면 params.id 사용
+  const pid = route.params?.id
+  if (typeof pid === 'string' && pid.trim()) return pid.trim()
+
+  // /chat?scenario=romance 형태면 query.scenario 사용
+  const qs = route.query?.scenario
+  if (typeof qs === 'string' && qs.trim()) return qs.trim()
+
+  // 유저별 마지막 시나리오
+  const userId = getUserId()
+  const last = localStorage.getItem(`simscam_last_scenario:${userId}`)
+  if (last) return last
+
+  return 'default'
+}
+
+
+
+function saveLastScenario(userId, scenarioId) {
+  localStorage.setItem(`simscam_last_scenario:${userId}`, scenarioId)
+}
+
+//응답이 string이면 파싱
 function normalizeResponse(data) {
   if (typeof data === 'string') {
     try { return JSON.parse(data) } catch { return { text: data } }
@@ -50,18 +85,50 @@ function normalizeServerPayload(parsed) {
       '(응답 없음)'
 
   const image = parsed?.image ?? null
-  const event = parsed?.event ?? null
-  const end = !!parsed?.end
-  const stage = parsed?.['단계'] ?? parsed?.stage ?? null
-  const eventLogs = parsed?.eventLogs ?? {}
 
-  return { text, image, event, end, stage, eventLogs }
+  const currentEvent =
+      parsed?.currentEvent ??
+      parsed?.CurrentEvent ??
+      null
+
+  const event =
+      parsed?.event ??
+      currentEvent ??
+      null
+
+  const end = !!(parsed?.end)
+
+  const stage =
+      parsed?.['단계'] ??
+      parsed?.stage ??
+      null
+
+  const eventLogs =
+      parsed?.eventLogs ??
+      {}
+
+  return { text, image, currentEvent, event, end, stage, eventLogs }
 }
+
 function pickEventName(parsed) {
-  if (typeof parsed?.event === 'string' && parsed.event.trim()) return parsed.event.trim()
-  return null
+  const ev = parsed?.event ?? parsed?.currentEvent ?? parsed?.CurrentEvent
+  return (typeof ev === 'string' && ev.trim()) ? ev.trim() : null
 }
 
+function nextStepFromLogs(logs) {
+  const steps = Object.keys(logs || {})
+      .map(k => Number(String(k).split('_')[0]) || 0)
+  return (steps.length ? Math.max(...steps) : 0) + 1
+}
+
+function mergeLogs(serverLogs = {}, localLogs = {}) {
+  // server 먼저 깔고 local로 덮어쓰기
+  return { ...(serverLogs || {}), ...(localLogs || {}) }
+}
+
+function hasAnyEventLogs(logs) {
+  return !!logs && Object.keys(logs).length > 0
+}
 
 const focusInput = async () => {
   await nextTick()
@@ -100,7 +167,6 @@ async function scrollToBottom(forceSmooth = false) {
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
 
   scrollRaf = requestAnimationFrame(() => {
-    // 사용자가 위에서 읽는 중이면 자동 스크롤 금지
     if (!forceSmooth && !atBottom.value) {
       showNewMsgBtn.value = true
       return
@@ -145,7 +211,6 @@ async function loadOlder() {
   loadingOlder = false
 }
 
-// 스크롤 맨 위 자동 로드가 너무 자주 호출되는 거 방지
 let autoLoadLock = false
 async function loadOlderAuto() {
   if (autoLoadLock) return
@@ -166,7 +231,6 @@ watch(
         return
       }
 
-      // 위에서 읽고 있으면 카운트 + 버튼만
       newMsgCount.value += added
       showNewMsgBtn.value = true
     }
@@ -177,6 +241,49 @@ onMounted(async () => {
   await scrollToBottom(false)
 })
 
+//end가 와도 “이벤트가 없으면” 결과로 보내지 않기 + (유저별/시나리오별/createdAt 저장)
+function goResultIfNeeded(parsed, r) {
+  const shouldEnd = !!(r?.end || parsed?.end)
+  if (!shouldEnd) return false
+
+  const serverLogs = (parsed?.eventLogs ?? r?.eventLogs ?? {}) || {}
+  const mergedLogs = mergeLogs(serverLogs, localEventLogs.value)
+
+  if (!hasAnyEventLogs(mergedLogs)) {
+    chats.value.push({
+      role: 'bot',
+      text: '아직 기록된 위험 이벤트가 없어요. 대화를 조금 더 진행해볼까요?',
+    })
+    return true
+  }
+
+  const userId = getUserId()
+  const scenarioId = getScenarioId()
+  saveLastScenario(userId, scenarioId)
+
+  const resultPayload = {
+    userId,                // 유저별
+    scenarioId,            // 시나리오별
+    createdAt: Date.now(),
+
+    currentEvent: (parsed?.currentEvent ?? parsed?.CurrentEvent ?? r?.currentEvent ?? null),
+    eventLogs: mergedLogs,
+    sessionId: (parsed?.sessionId ?? sessionId.value ?? null),
+    stage: (parsed?.['단계'] ?? parsed?.stage ?? r?.stage ?? null),
+  }
+
+  // 유저+시나리오별 결과 저장
+  localStorage.setItem(`scam_result:${userId}:${scenarioId}`, JSON.stringify(resultPayload))
+
+  // 유저별 최신 결과(홈/마이페이지에서 “최근 체험” 보여줄 때 유용)
+  localStorage.setItem(`scam_result_latest:${userId}`, JSON.stringify(resultPayload))
+
+  // (옵션) 기존 키도 남겨서 예전 ResultPage fallback 호환
+  localStorage.setItem('scam_result', JSON.stringify(resultPayload))
+
+  router.push({ path: '/result', state: { result: resultPayload } })
+  return true
+}
 
 const send = async () => {
   const text = input.value.trim()
@@ -191,6 +298,8 @@ const send = async () => {
     const parsed = normalizeResponse(data)
     const r = normalizeServerPayload(parsed)
 
+    if (goResultIfNeeded(parsed, r)) return
+
     chats.value.push({
       role: 'bot',
       text: r.text,
@@ -200,9 +309,7 @@ const send = async () => {
     })
 
     const ev = pickEventName(parsed)
-    pendingEvent.value = ev
-        ? { event: ev, text: buildEventCardText(ev, r.text) }
-        : null
+    pendingEvent.value = ev ? { event: ev } : null
 
   } catch (e) {
     chats.value.push({ role: 'bot', text: '연결 실패' })
@@ -214,25 +321,33 @@ const send = async () => {
 
 const decide = async (choice) => {
   const answer = choice === 'YES' ? 'yes' : 'no'
-  const userText = choice === 'YES' ? '예' : '아니오'
-
-  // 선택 UI 반영
-  chats.value.push({ role: 'user', text: userText })
 
   const eventObj = pendingEvent.value
   const event = eventObj?.event
   pendingEvent.value = null
-  focusInput()
 
   if (!event) {
     chats.value.push({ role: 'bot', text: '선택 전송 실패: event 없음' })
     return
   }
 
+  chats.value.push({
+    role: 'system',
+    text: eventToActionText(event, answer),
+    meta: { kind: 'eventAction', event, answer }
+  })
+
+
+
+  const step = nextStepFromLogs(localEventLogs.value)
+  localEventLogs.value[`${step}_${event}`] = answer
+
   try {
     const data = await sendDecision(sessionId.value, event, answer)
     const parsed = normalizeResponse(data)
     const r = normalizeServerPayload(parsed)
+
+    if (goResultIfNeeded(parsed, r)) return
 
     chats.value.push({
       role: 'bot',
@@ -242,11 +357,8 @@ const decide = async (choice) => {
       end: r.end,
     })
 
-
     const ev2 = pickEventName(parsed)
-    pendingEvent.value = ev2
-        ? { event: ev2, text: buildEventCardText(ev2, r.text) }
-        : null
+    pendingEvent.value = ev2 ? { event: ev2 } : null
 
   } catch (e) {
     chats.value.push({ role: 'bot', text: '선택 전송 실패' })
@@ -258,25 +370,41 @@ const decide = async (choice) => {
 
 function eventToQuestion(eventName) {
   switch (eventName) {
-    case '금전요구': return '요구에 따라 송금하시겠습니까?'
-    case '개인정보요구': return '요구에 따라 개인정보를 제공하시겠습니까?'
-    case '투자권유': return '요구에 따라 투자를 진행하시겠습니까?'
-    case '앱설치유도': return '요구에 따라 앱을 설치하시겠습니까?'
-    case '사이트가입유도': return '요구에 따라 사이트에 가입하시겠습니까?'
-    default: return '요구에 따르시겠습니까?'
+    case '금전요구': return '지금 돈을 보내 달라는 요청에 응할까요?'
+    case '개인정보요구': return '개인정보를 보내 달라는 요청에 응할까요?'
+    case '투자권유': return '투자를 하자는 제안을 받아들일까요?'
+    case '앱설치유도': return '앱을 설치하라는 요청을 따를까요?'
+    case '사이트가입유도': return '사이트에 가입하라는 요청을 따를까요?'
+    default: return '요청을 따를까요?'
   }
 }
 
-function buildEventCardText(eventName, lastBotText) {
-  const question = eventToQuestion(eventName)
-  const detail = (lastBotText ?? '').trim()
-  // 디테일 너무 길면 자르기(선택)
-  const short = detail.length > 120 ? detail.slice(0, 120) + '…' : detail
-  return short ? `${question}\n\n요청 내용: ${short}` : question
+function eventToActionText(eventName, answer) {
+  const yes = answer === "yes";
+
+  switch (eventName) {
+    case "금전요구":
+      return yes ? "요청대로 돈을 송금했습니다." : "송금 요청을 거절했습니다.";
+    case "개인정보요구":
+      return yes ? "요청대로 개인정보를 전달했습니다." : "개인정보 제공을 거절했습니다.";
+    case "투자권유":
+      return yes ? "요청대로 투자를 진행했습니다." : "투자 제안을 거절했습니다.";
+    case "앱설치유도":
+      return yes ? "요청대로 앱을 설치했습니다." : "앱 설치를 거절했습니다.";
+    case "사이트가입유도":
+      return yes ? "요청대로 사이트에 가입했습니다." : "사이트 가입을 거절했습니다.";
+    default:
+      return yes ? "요청을 수락했습니다." : "요청을 거절했습니다.";
+  }
 }
 
 
+
+function buildEventCardText(eventName) {
+  return eventToQuestion(eventName)
+}
 </script>
+
 
 <template>
   <main class="dm">
@@ -309,7 +437,7 @@ function buildEventCardText(eventName, lastBotText) {
           <img class="roomAvatar" src="/img/씹덕1.jpeg" alt="미아" />
           <div class="info">
             <div class="name">최정민</div>
-            <div class="status">online </div>
+            <div class="status">online</div>
           </div>
         </div>
 
@@ -357,27 +485,35 @@ function buildEventCardText(eventName, lastBotText) {
         <div
             v-for="(c, i) in visibleChats"
             :key="startIndex + i"
-            :class="['row', c.role === 'user' ? 'me' : 'them']"
         >
-          <div class="bubble">
-            <div class="text">{{ c.text }}</div>
+          <div v-if="c.role === 'system'" class="systemRow">
+            <div class="systemPill">{{ c.text }}</div>
+          </div>
 
-            <!-- 이미지가 있으면 보여주기 (선택) -->
-            <img
-                v-if="c.image"
-                class="bubbleImg"
-                :src="`http://localhost:8080/${c.image}`"
-                alt=""
-            />
+
+          <div v-else :class="['row', c.role === 'user' ? 'me' : 'them']">
+            <div class="bubble">
+              <div class="text">{{ c.text }}</div>
+
+              <img
+                  v-if="c.image"
+                  class="bubbleImg"
+                  :src="`http://localhost:8080/${c.image}`"
+                  alt=""
+              />
+            </div>
           </div>
         </div>
+
 
         <!-- 이벤트 선택 카드 -->
         <div v-if="pendingEvent" class="eventCard">
           <div class="eventTitle">선택 이벤트</div>
           <div class="eventQ">
-            {{ eventToQuestion(pendingEvent.event ?? pendingEvent) }}
+            {{ eventToQuestion(pendingEvent.event) }}
           </div>
+
+
           <div class="eventBtns">
             <button class="yes" @click="decide('YES')">예</button>
             <button class="no" @click="decide('NO')">아니오</button>
@@ -409,6 +545,31 @@ function buildEventCardText(eventName, lastBotText) {
 </template>
 
 <style scoped>
+
+/* 중앙 시스템 로그 */
+.systemRow{
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin: 10px 0;
+}
+
+.systemPill{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 6px 10px;
+  border-radius: 999px;
+
+  font-size: 12px;
+  font-weight: 700;
+  color: #777;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid #eee;
+  box-shadow: none;
+}
+
 .profile .roomAvatar {
   box-shadow:
       0 0 0 2px #fff,
@@ -567,20 +728,50 @@ function buildEventCardText(eventName, lastBotText) {
 .row { display: flex; margin: 8px 0; }
 .row.them { justify-content: flex-start; }
 .row.me { justify-content: flex-end; }
+
 .bubble {
   display: inline-flex;
-  max-width: 58%;
-  padding: 8px 12px;
+  flex-direction: column;
+  align-items: flex-start;
+
+  max-width: 68%;
+  width: fit-content;
+  min-width: 0;
+  flex: 0 0 auto;
+
+  padding: 6px 10px;
   border-radius: 16px;
   border: 1px solid #e9e9e9;
   background: #fff;
+
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  line-break: auto;
+
   line-height: 1.25;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
 }
+
+
+.actionBubble{
+  background: #111 !important;
+  color: #fff !important;
+  border-color: #111 !important;
+  font-weight: 800;
+}
+
+
+.text{
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  line-break: auto;
+  text-wrap: wrap;
+  font-size: 14px;
+  line-height: 1.45;
+}
 .row.me .bubble { background: #efe9ff; border-color: #e1d6ff; }
-.text { font-size: 14px; }
 
 .bubbleImg {
   display: block;
@@ -631,7 +822,6 @@ function buildEventCardText(eventName, lastBotText) {
   font-weight: 800;
 }
 .newMsgBtn:hover { background: #fff; }
-
 
 /* 입력 */
 .composer {
