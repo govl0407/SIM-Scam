@@ -26,50 +26,56 @@ public class chatController {
     }
 
     @PostMapping("/message")
-    public Map<String, Object> chat(@RequestBody userMessageDto request, HttpSession session) {
-        // 1. 세션 ID 가져오기 (없으면 자동 생성됨)
-        String sessionId = session.getId();
+    public Map<String, Object> chat(
+            @RequestBody userMessageDto request,
+            @RequestParam("scenario") String scenario, // 🎯 시나리오 쿼리 파라미터 추가
+            HttpSession session) {
 
-        String strJson = chatService.chat(sessionId, request);
+        String sessionId = session.getId();
+        // 서비스에서 sessionId와 scenario를 조합해 사용할 것이므로 둘 다 전달
+        String strJson = chatService.chat(sessionId, request, scenario);
 
         try {
             Map<String, Object> fullGptResponse = objectMapper.readValue(strJson, Map.class);
             Map<String, Object> filteredResponse = new HashMap<>();
 
-            // 🎯 요청하신 필드 필터링
+            // 🎯 compositeKey를 고려하여 ChatMemory 조회
+            String compositeKey = sessionId + ":" + scenario;
+
             filteredResponse.put("text", fullGptResponse.get("text"));
             filteredResponse.put("image", fullGptResponse.get("image"));
             filteredResponse.put("end", fullGptResponse.get("end"));
             filteredResponse.put("단계", fullGptResponse.get("단계"));
-            filteredResponse.put("currentEvent", ChatMemory.getCurrentEvent(sessionId));
+            filteredResponse.put("currentEvent", ChatMemory.getCurrentEvent(compositeKey));
 
             return filteredResponse;
-
         } catch (Exception e) {
             throw new RuntimeException("GPT 응답 파싱 실패", e);
         }
     }
 
     @PostMapping("/event-response")
-    public Map<String, Object> eventResponse(@RequestBody EventResponseDto request, HttpSession session) {
-        // 2. 동일한 세션 ID 사용
-        String sessionId = session.getId();
+    public Map<String, Object> eventResponse(
+            @RequestBody EventResponseDto request,
+            @RequestParam("scenario") String scenario, // 🎯 시나리오 추가
+            HttpSession session) {
 
-        String strJson = chatService.eventResponse(sessionId, request);
+        String sessionId = session.getId();
+        String strJson = chatService.eventResponse(sessionId, request, scenario); // 🎯 시나리오 전달
 
         try {
             Map<String, Object> fullGptResponse = objectMapper.readValue(strJson, Map.class);
             Map<String, Object> filteredResponse = new HashMap<>();
 
-            // 🎯 요청하신 필드 필터링
+            String compositeKey = sessionId + ":" + scenario; // 🎯 compositeKey 생성
+
             filteredResponse.put("text", fullGptResponse.get("text"));
             filteredResponse.put("image", fullGptResponse.get("image"));
             filteredResponse.put("단계", fullGptResponse.get("단계"));
-            filteredResponse.put("eventLogs", ChatMemory.getEventLogs(sessionId));
-            filteredResponse.put("CurrentEvent", ChatMemory.getCurrentEvent(sessionId));
+            filteredResponse.put("eventLogs", ChatMemory.getEventLogs(compositeKey)); // 🎯 Key 수정
+            filteredResponse.put("CurrentEvent", ChatMemory.getCurrentEvent(compositeKey)); // 🎯 Key 수정
 
             return filteredResponse;
-
         } catch (Exception e) {
             throw new RuntimeException("이벤트 응답 처리 실패", e);
         }

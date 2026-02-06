@@ -3,6 +3,7 @@ package com.example.be.service;
 import com.example.be.dto.EventResponseDto;
 import com.example.be.dto.userMessageDto;
 import com.example.be.prompts.PromptLoader;
+import com.example.be.prompts.ScenarioType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
@@ -22,12 +23,15 @@ public class ChatService {
         this.promptLoader = promptLoader;
     }
 
-    public String chat(String sessionId, userMessageDto request) {
-        List<Map<String, String>> messages = ChatMemory.getChatLogs(sessionId);
+    public String chat(String sessionId, userMessageDto request, String scenarioKey) {
+        // 1. 키 조합 (세션별 + 시나리오별 독립 공간 확보)
+        String compositeKey = sessionId + ":" + scenarioKey;
+        List<Map<String, String>> messages = ChatMemory.getChatLogs(compositeKey);
 
-        // 1️⃣ 최초 system 프롬프트 주입
         if (messages.isEmpty()) {
-            messages.add(Map.of("role", "system", "content", promptLoader.load("prompts/romance_scam_money.txt")));
+            // 2. 매핑 테이블에서 안전하게 경로 조회
+            String safePath = ScenarioType.getPath(scenarioKey);
+            messages.add(Map.of("role", "system", "content", promptLoader.load(safePath)));
         }
 
         // 2️⃣ 이전 대화에 섞여있던 [현재이벤트] 시스템 메시지는 제거 (중복 및 혼선 방지)
@@ -82,9 +86,9 @@ public class ChatService {
         return nextIndex + "_" + eventName;
     }
 
-    // eventResponse는 기존 로직을 유지하되, 명확히 null 처리를 수행
-    public String eventResponse(String sessionId, EventResponseDto request) {
-        List<Map<String, String>> messages = ChatMemory.getChatLogs(sessionId);
+    public String eventResponse(String sessionId, EventResponseDto request, String scenarioKey) {
+        String compositeKey = sessionId + ":" + scenarioKey; // 🎯 일관된 키 생성
+        List<Map<String, String>> messages = ChatMemory.getChatLogs(compositeKey);
 
         String eventContent = "[EVENT_RESPONSE]\n{\n  \"event\": \"" + request.getEvent() + "\",\n  \"user_answer\": \"" + request.getAnswer() + "\"\n}";
         messages.add(Map.of("role", "user", "content", eventContent));
@@ -94,13 +98,15 @@ public class ChatService {
 
         try {
             Map<String, Object> replyMap = objectMapper.readValue(reply, Map.class);
-            if (ChatMemory.getCurrentEvent(sessionId) != null) {
-                ChatMemory.updateCurrentEventMessage(sessionId, request.getAnswer());
+
+            // 🎯 모든 ChatMemory 호출 시 compositeKey 사용
+            if (ChatMemory.getCurrentEvent(compositeKey) != null) {
+                ChatMemory.updateCurrentEventMessage(compositeKey, request.getAnswer());
             }
-            // 이벤트 종료
-            ChatMemory.setCurrentEvent(sessionId, null);
-            replyMap.put("event", null); // 명시적 종료
-            replyMap.put("eventLogs", ChatMemory.getEventLogs(sessionId));
+
+            ChatMemory.setCurrentEvent(compositeKey, null);
+            replyMap.put("event", null);
+            replyMap.put("eventLogs", ChatMemory.getEventLogs(compositeKey));
 
             return objectMapper.writeValueAsString(replyMap);
         } catch (Exception e) {
