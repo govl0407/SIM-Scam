@@ -7,7 +7,8 @@
           v-if="
           route.path === '/' ||
           route.path.startsWith('/chat') ||
-          route.path.startsWith('/about')
+          route.path.startsWith('/about') ||
+          route.path.startsWith('/result')
         "
       />
 
@@ -20,7 +21,10 @@
 </template>
 
 <style>
-.app { min-height: 100vh; }
+.app {
+  min-height: 100vh;
+}
+
 .container {
   max-width: 980px;
   margin: 0 auto;

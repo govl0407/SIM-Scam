@@ -3,33 +3,34 @@ import { createRouter, createWebHistory } from 'vue-router'
 import StartView from '../pages/StartPage.vue'
 import TestChatPage from '../pages/TestChatPage.vue'
 import AboutPage from '../pages/AboutPage.vue'
-import ScenarioSelectPage from "../pages/ScenarioSelectPage.vue";
+import ResultPage from '../pages/ResultPage.vue'
 
+const routes = [
+    {
+        path: '/',
+        name: 'Start',
+        component: StartView,
+    },
+    {
+        path: '/chat',
+        name: 'Chat',
+        component: TestChatPage,
+    },
+    {
+        path: '/about',
+        name: 'About',
+        component: AboutPage,
+    },
+    {
+        path: '/result',
+        name: 'Result',
+        component: ResultPage,
+    },
+]
 
 const router = createRouter({
     history: createWebHistory(),
-    routes: [
-        {
-            path: '/',
-            name: 'Start',
-            component: StartView,   // 시작페이지
-        },
-        {
-            path: '/chat',
-            name: 'Chat',
-            component: TestChatPage // DM 채팅 페이지
-        },
-        {
-            path: '/about',
-            name: 'About',
-            component: AboutPage        // ABOUT 설명 페이지
-        },
-        {
-            path: "/scenario",
-            name: "ScenarioSelect",
-            component: ScenarioSelectPage,
-        }
-    ],
+    routes,
 })
 
 export default router
