@@ -7,6 +7,7 @@ import com.example.be.prompts.ScenarioType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 @Service
@@ -112,5 +113,40 @@ public class ChatService {
         } catch (Exception e) {
             throw new RuntimeException("이벤트 응답 처리 실패", e);
         }
+    }
+    public Map<String, String> getPersonaInfo(String scenarioKey) {
+        String safePath = ScenarioType.getPath(scenarioKey);
+        String fullPrompt = promptLoader.load(safePath);
+
+        Map<String, String> personaMap = new HashMap<>();
+
+        try {
+            // 1. "[AI 페르소나]" 섹션 위치 찾기
+            String sectionHeader = "[AI 페르소나]";
+            int startIndex = fullPrompt.indexOf(sectionHeader);
+            if (startIndex == -1) return personaMap;
+
+            // 2. 해당 섹션 이후의 내용만 추출 (다음 섹션 '[' 전까지)
+            String content = fullPrompt.substring(startIndex + sectionHeader.length());
+            int nextSectionIndex = content.indexOf("[");
+            if (nextSectionIndex != -1) {
+                content = content.substring(0, nextSectionIndex);
+            }
+
+            // 3. 줄바꿈으로 나누어 key : value 추출
+            String[] lines = content.split("\n");
+            for (String line : lines) {
+                if (line.contains(":")) {
+                    String[] parts = line.split(":", 2);
+                    String key = parts[0].trim();
+                    String value = parts[1].trim();
+                    personaMap.put(key, value);
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("페르소나 정보 파싱 실패", e);
+        }
+
+        return personaMap;
     }
 }
