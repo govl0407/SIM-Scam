@@ -46,6 +46,9 @@ const SCENARIOS_BY_TRACK = {
 const selectedTrack = ref(null)
 const selectedScenario = ref(null)
 
+//  서버가 내려주는 세션ID(프론트 저장/복원 기준키)
+const serverSessionId = ref(localStorage.getItem('simscam_server_session_id') || null)
+
 // 유저 식별(로그인 없으면 guest)
 function getUserId() {
   return localStorage.getItem('simscam_user_id') || 'guest'
@@ -78,6 +81,58 @@ function ensureScenarioRandomEveryTime() {
   selectedScenario.value = picked
 }
 
+/* =========================
+ *  sessionId 기반 localStorage 저장/복원
+ * ========================= */
+
+function chatStorageKey(sessionId, scenario) {
+  const sid = sessionId || 'no-session'
+  const sc = scenario || 'romance'
+  return `scam_chat:${sid}:${sc}`
+}
+
+function saveChatToStorage() {
+  const sid = serverSessionId.value
+  const sc = selectedScenario.value || 'romance'
+  if (!sid) return
+
+  const payload = {
+    sessionId: sid,
+    scenario: sc,
+    updatedAt: Date.now(),
+    chats: chats.value,
+    localEventLogs: localEventLogs.value,
+  }
+
+  try {
+    localStorage.setItem(chatStorageKey(sid, sc), JSON.stringify(payload))
+  } catch {
+    // storage full 등은 조용히 무시
+  }
+}
+
+function loadChatFromStorage() {
+  const sid = serverSessionId.value
+  const sc = selectedScenario.value || 'romance'
+  if (!sid) return false
+
+  const raw = localStorage.getItem(chatStorageKey(sid, sc))
+  if (!raw) return false
+
+  try {
+    const saved = JSON.parse(raw)
+    if (Array.isArray(saved?.chats)) chats.value = saved.chats
+    if (saved?.localEventLogs && typeof saved.localEventLogs === 'object') localEventLogs.value = saved.localEventLogs
+    return true
+  } catch {
+    return false
+  }
+}
+
+/* =========================
+ *  history payload
+ * ========================= */
+
 function buildHistoryPayload(limit = 20) {
   return chats.value
       .filter(m => m.role === 'user' || m.role === 'bot')
@@ -87,7 +142,6 @@ function buildHistoryPayload(limit = 20) {
         content: m.text
       }))
 }
-
 
 function pushBot(text, extra = {}) {
   const norm = (text ?? '').toString().trim()
@@ -262,6 +316,7 @@ async function loadOlderAuto() {
   setTimeout(() => { autoLoadLock = false }, 250)
 }
 
+/*  기존 스크롤/새메시지 watch는 그대로 유지 */
 watch(
     () => chats.value.length,
     async (newLen, oldLen) => {
@@ -279,8 +334,18 @@ watch(
     }
 )
 
+/*  저장용 watch(별도) */
+watch(
+    [chats, localEventLogs, selectedScenario, serverSessionId],
+    () => saveChatToStorage(),
+    { deep: true }
+)
+
 onMounted(async () => {
   ensureScenarioRandomEveryTime()
+
+  // sessionId가 이미 있으면(이전에 받은 적 있으면) 저장된 대화 복원
+  loadChatFromStorage()
 
   await focusInput()
   await scrollToBottom(false)
@@ -305,20 +370,26 @@ function goResultIfNeeded(parsed, r) {
   const userId = getUserId()
   const trackId = selectedTrack.value ?? getTrackId()
   const scenarioId = selectedScenario.value ?? 'romance'
+  const sid = serverSessionId.value || parsed?.sessionId || 'no-session'
 
   const resultPayload = {
     userId,
     trackId,
     scenarioId,
+    sessionId: sid, //  같이 저장
     createdAt: Date.now(),
     currentEvent: (parsed?.currentEvent ?? parsed?.CurrentEvent ?? r?.currentEvent ?? null),
     eventLogs: mergedLogs,
     stage: (parsed?.['단계'] ?? parsed?.stage ?? r?.stage ?? null),
   }
 
+  // 기존 키들
   localStorage.setItem(`scam_result:${userId}:${trackId}:${scenarioId}`, JSON.stringify(resultPayload))
   localStorage.setItem(`scam_result_latest:${userId}`, JSON.stringify(resultPayload))
   localStorage.setItem('scam_result', JSON.stringify(resultPayload))
+
+  //  세션 기반 키도 추가(세션별 결과 추적)
+  localStorage.setItem(`scam_result:${sid}:${trackId}:${scenarioId}`, JSON.stringify(resultPayload))
 
   // ResultPage fallback용
   localStorage.setItem(`simscam_last_scenario:${userId}`, scenarioId)
@@ -336,7 +407,7 @@ const send = async () => {
   const text = input.value.trim()
   if (!text) return
 
-  //  먼저 push -> 이 메시지도 history에 포함되게
+  // 먼저 push -> 이 메시지도 history에 포함되게
   chats.value.push({ role: 'user', text })
   input.value = ''
   focusInput()
@@ -348,11 +419,21 @@ const send = async () => {
     const data = await sendChat(text, { scenario: scenarioId, history })
 
     const parsed = normalizeResponse(data)
+
+    // 서버 sessionId 확보 + 저장 + (있으면) 복원
+    if (parsed?.sessionId && typeof parsed.sessionId === 'string') {
+      if (serverSessionId.value !== parsed.sessionId) {
+        serverSessionId.value = parsed.sessionId
+        localStorage.setItem('simscam_server_session_id', parsed.sessionId)
+        loadChatFromStorage()
+      }
+    }
+
     const r = normalizeServerPayload(parsed)
 
     if (goResultIfNeeded(parsed, r)) return
 
-    //  중복 방지 pushBot 사용
+    // 중복 방지 pushBot 사용
     pushBot(r.text, { stage: r.stage, end: r.end })
 
     const ev = pickEventName(parsed)
@@ -398,11 +479,21 @@ const decide = async (choice) => {
     const data = await sendDecision(event, answer, { scenario: scenarioId, history })
 
     const parsed = normalizeResponse(data)
+
+    //  서버 sessionId 확보 + 저장 + (있으면) 복원
+    if (parsed?.sessionId && typeof parsed.sessionId === 'string') {
+      if (serverSessionId.value !== parsed.sessionId) {
+        serverSessionId.value = parsed.sessionId
+        localStorage.setItem('simscam_server_session_id', parsed.sessionId)
+        loadChatFromStorage()
+      }
+    }
+
     const r = normalizeServerPayload(parsed)
 
     if (goResultIfNeeded(parsed, r)) return
 
-    //  중복 방지 pushBot 사용
+    // 중복 방지 pushBot 사용
     pushBot(r.text, { stage: r.stage, end: r.end })
 
     const ev2 = pickEventName(parsed)
@@ -454,7 +545,6 @@ function buildEventCardText(eventName) {
   return eventToQuestion(eventName)
 }
 </script>
-
 
 <template>
   <main class="dm">
