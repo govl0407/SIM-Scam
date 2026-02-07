@@ -86,26 +86,27 @@ public class ChatService {
         int nextIndex = eventLogs.size() + 1;
         return nextIndex + "_" + eventName;
     }
-
     public String eventResponse(String sessionId, EventResponseDto request, String scenarioKey) {
-        String compositeKey = sessionId + ":" + scenarioKey; // 🎯 일관된 키 생성
+        String compositeKey = sessionId + ":" + scenarioKey;
         List<Map<String, String>> messages = ChatMemory.getChatLogs(compositeKey);
 
+        // 1. 사용자 응답 추가
         String eventContent = "[EVENT_RESPONSE]\n{\n  \"event\": \"" + request.getEvent() + "\",\n  \"user_answer\": \"" + request.getAnswer() + "\"\n}";
         messages.add(Map.of("role", "user", "content", eventContent));
 
+        // 2. GPT 답변 생성
         String reply = gptService.chatGpt(messages);
         messages.add(Map.of("role", "assistant", "content", reply));
 
         try {
-            Map<String, Object> replyMap = objectMapper.readValue(reply, Map.class);
+            // 3. 🎯 메모리 업데이트 (순서 중요!)
+            // 현재 떠있는 currentEvent 라벨을 찾아 사용자의 answer를 먼저 저장
+            ChatMemory.updateCurrentEventMessage(compositeKey, request.getAnswer());
 
-            // 🎯 모든 ChatMemory 호출 시 compositeKey 사용
-            if (ChatMemory.getCurrentEvent(compositeKey) != null) {
-                ChatMemory.updateCurrentEventMessage(compositeKey, request.getAnswer());
-            }
-
+            // 4. 저장이 끝난 후 이벤트를 종료(null) 상태로 변경
             ChatMemory.setCurrentEvent(compositeKey, null);
+
+            Map<String, Object> replyMap = objectMapper.readValue(reply, Map.class);
             replyMap.put("event", null);
             replyMap.put("eventLogs", ChatMemory.getEventLogs(compositeKey));
 
@@ -114,6 +115,7 @@ public class ChatService {
             throw new RuntimeException("이벤트 응답 처리 실패", e);
         }
     }
+
     public Map<String, String> getPersonaInfo(String scenarioKey) {
         String safePath = ScenarioType.getPath(scenarioKey);
         String fullPrompt = promptLoader.load(safePath);

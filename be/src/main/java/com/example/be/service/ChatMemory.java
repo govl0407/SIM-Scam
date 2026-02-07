@@ -64,14 +64,27 @@ public class ChatMemory {
         String currentEvent = getCurrentEvent(sessionId);
         if (currentEvent == null) return null;
 
-        for (String key : getEventLogs(sessionId).keySet()) {
+        Map<String, String> logs = getEventLogs(sessionId);
+        String targetLabel = null;
+        int maxIndex = -1;
+
+        for (String key : logs.keySet()) {
             if (key.endsWith("_" + currentEvent)) {
-                return key;
+                // "1_개인정보요구"에서 숫자 부분 추출
+                try {
+                    int currentIndex = Integer.parseInt(key.split("_")[0]);
+                    // 값이 아직 null(미응답)인 것 중에서 가장 높은 인덱스를 찾음
+                    if (logs.get(key) == null && currentIndex > maxIndex) {
+                        maxIndex = currentIndex;
+                        targetLabel = key;
+                    }
+                } catch (Exception e) {
+                    // 파싱 실패 시 무시
+                }
             }
         }
-        return null;
+        return targetLabel;
     }
-
 
     public void clear(String sessionId) {
         memory.remove(sessionId);
