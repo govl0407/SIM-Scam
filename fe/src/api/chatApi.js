@@ -33,3 +33,16 @@ export async function sendDecision(event, answer, opts = {}) {
 
     return res.data;
 }
+
+export async function getPersona(scenarioOrOpts = {}) {
+    const scenario =
+        typeof scenarioOrOpts === "string"
+            ? normalizeScenario(scenarioOrOpts)
+            : normalizeScenario(scenarioOrOpts?.scenario);
+
+    const res = await api.get("/api/chat/persona", {
+        params: { scenario },
+    });
+
+    return res.data;
+}

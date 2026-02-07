@@ -1,6 +1,190 @@
+<template>
+  <main class="dm">
+    <!-- 좌측: DM 리스트 -->
+    <aside class="sidebar">
+      <div class="sidebarTop">
+        <div class="appTitle">DM</div>
+        <div class="hint">로맨스스캠 체험</div>
+      </div>
+
+      <button class="room active" type="button" @click="openProfile">
+        <img class="roomAvatar" :src="persona.avatarUrl" :alt="persona.name" />
+        <div class="roomMeta">
+          <div class="roomName">
+            {{ persona.name }}
+            <span v-if="persona.age">({{ persona.age }})</span>
+          </div>
+          <div class="roomLast">
+            {{ chats.length
+              ? chats[chats.length - 1].text
+              : (persona.subtitle || '대화를 시작해보세요') }}
+          </div>
+        </div>
+      </button>
+
+
+      <div class="sidebarBottom">
+        <div class="miniTip">TIP: 수상하면 “아니오” 선택</div>
+      </div>
+    </aside>
+
+    <!-- 우측: 채팅 -->
+    <section class="panel">
+      <header class="topbar">
+        <div class="profile clickable" @click="openProfile">
+          <img class="roomAvatar" :src="persona.avatarUrl" :alt="persona.name" />
+          <div class="info">
+            <div class="name">{{ persona.name }}</div>
+            <div class="status">
+              <span v-if="persona.job">{{ persona.job }}</span>
+              <span v-if="persona.location"> · {{ persona.location }}</span>
+              <span v-if="!persona.job && !persona.location">online</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="ghost" type="button" title="통화">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path
+                  d="M22 16.92v3a2 2 0 0 1-2.18 2
+                 19.79 19.79 0 0 1-8.63-3.07
+                 19.5 19.5 0 0 1-6-6
+                 19.79 19.79 0 0 1-3.07-8.67
+                 A2 2 0 0 1 4.11 2h3
+                 a2 2 0 0 1 2 1.72
+                 c.12.81.3 1.6.54 2.36
+                 a2 2 0 0 1-.45 2.11L8.09 9.91
+                 a16 16 0 0 0 6 6l1.72-1.72
+                 a2 2 0 0 1 2.11-.45
+                 c.76.24 1.55.42 2.36.54
+                 a2 2 0 0 1 1.72 2z"
+              />
+            </svg>
+          </button>
+
+          <button class="ghost" type="button" title="정보" @click="showInfo = true">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="chat" ref="boxRef" @scroll="updateScrollState">
+        <div class="loadMoreWrap" v-if="canLoadMore">
+          <button class="loadMoreBtn" type="button" @click="loadOlder">
+            이전 메시지 더보기
+          </button>
+        </div>
+
+        <div class="dateLine">오늘</div>
+
+        <div v-for="(c, i) in visibleChats" :key="startIndex + i">
+          <div v-if="c.role === 'system'" class="systemRow">
+            <div class="systemPill">{{ c.text }}</div>
+          </div>
+
+          <div v-else :class="['row', c.role === 'user' ? 'me' : 'them']">
+            <div class="bubble">
+              <div class="text">{{ c.text }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 이벤트 선택 카드 -->
+        <div v-if="pendingEvent" class="eventCard">
+          <div class="eventTitle">선택 이벤트</div>
+          <div class="eventQ">
+            {{ eventToQuestion(pendingEvent.event) }}
+          </div>
+
+          <div class="eventBtns">
+            <button class="yes" @click="decide('YES')">예</button>
+            <button class="no" @click="decide('NO')">아니오</button>
+          </div>
+        </div>
+
+        <!-- 새 메시지 버튼 -->
+        <button
+            v-if="showNewMsgBtn"
+            class="newMsgBtn"
+            type="button"
+            @click="jumpToBottom"
+        >
+          새 메시지 {{ newMsgCount > 0 ? newMsgCount : '' }} ↓
+        </button>
+      </section>
+
+      <footer class="composer">
+        <input
+            ref="inputRef"
+            v-model="input"
+            @keyup.enter="send"
+            placeholder="메시지 입력…"
+        />
+        <button class="sendBtn" @click="send">전송</button>
+      </footer>
+    </section>
+
+    <div v-if="showProfile" class="profileModal" @click.self="closeProfile">
+      <div class="profileCard">
+        <div class="pcTop">
+          <img class="pcAvatar" :src="persona.avatarUrl" :alt="persona.name" />
+          <div class="pcMeta">
+            <div class="pcNameRow">
+              <div class="pcName">{{ persona.name }}</div>
+              <span class="pcBadge">verified</span>
+            </div>
+            <div class="pcSub">
+              <span v-if="persona.age">{{ persona.age }}</span>
+              <span v-if="persona.age && persona.location"> · </span>
+              <span v-if="persona.location">{{ persona.location }}</span>
+            </div>
+            <div class="pcJob" v-if="persona.job">{{ persona.job }}</div>
+          </div>
+
+          <button class="pcClose" type="button" @click="closeProfile">✕</button>
+        </div>
+
+        <div class="pcStats">
+          <div class="pcStat">
+            <div class="num">{{ profileStats.posts }}</div>
+            <div class="label">게시물</div>
+          </div>
+          <div class="pcStat">
+            <div class="num">{{ profileStats.followers }}</div>
+            <div class="label">팔로워</div>
+          </div>
+          <div class="pcStat">
+            <div class="num">{{ profileStats.following }}</div>
+            <div class="label">팔로잉</div>
+          </div>
+        </div>
+
+        <div class="pcBio" v-if="persona.personality || persona.traits">
+          <div class="pcBioLine" v-if="persona.personality"><b>성격</b> {{ persona.personality }}</div>
+          <div class="pcBioLine" v-if="persona.traits"><b>특징</b> {{ persona.traits }}</div>
+        </div>
+
+        <div class="pcActions">
+          <button class="pcBtn primary" type="button" @click="closeProfile">메시지 보내기</button>
+          <button class="pcBtn" type="button">팔로잉</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+</template>
+
 <script setup>
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
-import { sendChat, sendDecision } from '../api/chatApi'
+import { sendChat, sendDecision, getPersona } from '../api/chatApi'
 import { useRouter, useRoute } from 'vue-router'
 
 const router = useRouter()
@@ -46,10 +230,130 @@ const SCENARIOS_BY_TRACK = {
 const selectedTrack = ref(null)
 const selectedScenario = ref(null)
 
-//  서버가 내려주는 세션ID(프론트 저장/복원 기준키)
+// 서버가 내려주는 세션ID(프론트 저장/복원 기준키)
 const serverSessionId = ref(localStorage.getItem('simscam_server_session_id') || null)
 
-// 유저 식별(로그인 없으면 guest)
+/* =========================
+ *  Persona
+ * ========================= */
+
+const persona = ref({
+  name: '상대',
+  age: '',
+  job: '',
+  location: '',
+  personality: '',
+  traits: '',
+  subtitle: '',
+  avatarUrl: '/img/씹덕1.jpeg',
+})
+
+function defaultAvatarByScenario(s) {
+  // 파일 없으면 기존 이미지로만 써도 됨
+  if (s === 'invest') return '/img/김부자.png'
+  if (s === 'romance') return '/img/일본인 여자.png'
+  return '/img/씹덕1.jpeg'
+}
+
+function mapPersona(raw = {}, scenarioId = 'romance') {
+  const name = raw['이름'] ?? raw['닉네임'] ?? raw['Name'] ?? '상대'
+  const age = raw['나이'] ?? raw['age'] ?? ''
+  const job = raw['직업'] ?? raw['job'] ?? ''
+  const location = raw['주소지'] ?? raw['거주지'] ?? raw['location'] ?? ''
+  const personality = raw['성격'] ?? raw['personality'] ?? ''
+  const traits = raw['특징'] ?? raw['traits'] ?? ''
+
+  const subtitle = [job, location].filter(Boolean).join(' · ')
+  const avatarUrl = defaultAvatarByScenario(scenarioId)
+
+  return { name, age, job, location, personality, traits, subtitle, avatarUrl }
+}
+
+async function loadPersona() {
+  const scenarioId = selectedScenario.value ?? 'romance'
+  try {
+    const raw = await getPersona(scenarioId)
+    persona.value = mapPersona(raw, scenarioId)
+  } catch {
+    persona.value = {
+      name: '상대',
+      age: '',
+      job: '',
+      location: '',
+      personality: '',
+      traits: '',
+      subtitle: '',
+      avatarUrl: defaultAvatarByScenario(scenarioId),
+    }
+  }
+}
+
+const showProfile = ref(false)
+
+// 인스타 연출용: persona 기반으로 stats를 그럴듯하게
+const profileStats = ref({ posts: 0, followers: '0', following: 0 })
+
+function buildProfileStats(p) {
+  const job = (p.job ?? '').toString()
+  const traits = (p.traits ?? '').toString()
+  const location = (p.location ?? '').toString()
+  const personality = (p.personality ?? '').toString()
+
+  // 💰 부자 / 투자 / 자산 애널리스트
+  const rich =
+      job.includes('자산') ||
+      job.includes('애널') ||
+      job.includes('투자') ||
+      traits.includes('성공') ||
+      traits.includes('외제차')
+
+  // 🇯🇵 일본인 유학생
+  const japaneseStudent =
+      job.includes('유학생') ||
+      job.includes('학생') ||
+      location.includes('일본') ||
+      traits.includes('일본') ||
+      personality.includes('일본')
+
+  // 우선순위: 부자 > 일본인 유학생 > 일반
+  if (rich) {
+    return {
+      posts: 73,
+      followers: '3.2만',
+      following: 123,
+    }
+  }
+
+  if (japaneseStudent) {
+    return {
+      posts: 24,        // 일상 사진 위주
+      followers: '1.2천',
+      following: 612,   // 많이 팔로우하는 타입
+    }
+  }
+
+  // 기본값
+  return {
+    posts: 18,
+    followers: '1.2만',
+    following: 321,
+  }
+}
+
+function openProfile() {
+  profileStats.value = buildProfileStats(persona.value)
+  showProfile.value = true
+}
+
+function closeProfile() {
+  showProfile.value = false
+}
+
+
+/* =========================
+ *  유저/트랙/시나리오
+ * ========================= */
+
 function getUserId() {
   return localStorage.getItem('simscam_user_id') || 'guest'
 }
@@ -130,18 +434,8 @@ function loadChatFromStorage() {
 }
 
 /* =========================
- *  history payload
+ *  chat push helpers
  * ========================= */
-
-function buildHistoryPayload(limit = 20) {
-  return chats.value
-      .filter(m => m.role === 'user' || m.role === 'bot')
-      .slice(-limit)
-      .map(m => ({
-        role: m.role === 'user' ? 'user' : 'assistant',
-        content: m.text
-      }))
-}
 
 function pushBot(text, extra = {}) {
   const norm = (text ?? '').toString().trim()
@@ -180,7 +474,7 @@ function normalizeServerPayload(parsed) {
 
   const currentEvent =
       parsed?.currentEvent ??
-      parsed?.CurrentEvent ??
+      parsed?.CurrentEvent ?? // 혹시 아직 백엔드 통일 전이면 방어
       null
 
   const event =
@@ -316,7 +610,7 @@ async function loadOlderAuto() {
   setTimeout(() => { autoLoadLock = false }, 250)
 }
 
-/*  기존 스크롤/새메시지 watch는 그대로 유지 */
+/* 새메시지 watch */
 watch(
     () => chats.value.length,
     async (newLen, oldLen) => {
@@ -334,17 +628,25 @@ watch(
     }
 )
 
-/*  저장용 watch(별도) */
+/* 저장용 watch */
 watch(
     [chats, localEventLogs, selectedScenario, serverSessionId],
     () => saveChatToStorage(),
     { deep: true }
 )
 
+/* 시나리오 바뀌면 persona도 새로 */
+watch(selectedScenario, async () => {
+  await loadPersona()
+})
+
 onMounted(async () => {
   ensureScenarioRandomEveryTime()
 
-  // sessionId가 이미 있으면(이전에 받은 적 있으면) 저장된 대화 복원
+  // ✅ 시나리오 결정된 후 페르소나 로드
+  await loadPersona()
+
+  // sessionId가 이미 있으면 저장된 대화 복원
   loadChatFromStorage()
 
   await focusInput()
@@ -376,22 +678,17 @@ function goResultIfNeeded(parsed, r) {
     userId,
     trackId,
     scenarioId,
-    sessionId: sid, //  같이 저장
+    sessionId: sid,
     createdAt: Date.now(),
     currentEvent: (parsed?.currentEvent ?? parsed?.CurrentEvent ?? r?.currentEvent ?? null),
     eventLogs: mergedLogs,
     stage: (parsed?.['단계'] ?? parsed?.stage ?? r?.stage ?? null),
   }
 
-  // 기존 키들
   localStorage.setItem(`scam_result:${userId}:${trackId}:${scenarioId}`, JSON.stringify(resultPayload))
   localStorage.setItem(`scam_result_latest:${userId}`, JSON.stringify(resultPayload))
   localStorage.setItem('scam_result', JSON.stringify(resultPayload))
-
-  //  세션 기반 키도 추가(세션별 결과 추적)
   localStorage.setItem(`scam_result:${sid}:${trackId}:${scenarioId}`, JSON.stringify(resultPayload))
-
-  // ResultPage fallback용
   localStorage.setItem(`simscam_last_scenario:${userId}`, scenarioId)
   localStorage.setItem(`simscam_last_track:${userId}`, trackId)
 
@@ -400,27 +697,24 @@ function goResultIfNeeded(parsed, r) {
 }
 
 /* =========================
- *  메시지 전송: scenario + history 전달
+ *  메시지 전송: scenario만 전달 (백엔드 history 없음)
  * ========================= */
 
 const send = async () => {
   const text = input.value.trim()
   if (!text) return
 
-  // 먼저 push -> 이 메시지도 history에 포함되게
   chats.value.push({ role: 'user', text })
   input.value = ''
   focusInput()
 
   try {
     const scenarioId = selectedScenario.value ?? 'romance'
-    const history = buildHistoryPayload(20)
-
-    const data = await sendChat(text, { scenario: scenarioId, history })
+    const data = await sendChat(text, { scenario: scenarioId })
 
     const parsed = normalizeResponse(data)
 
-    // 서버 sessionId 확보 + 저장 + (있으면) 복원
+    // (백엔드가 sessionId를 내려주는 구조가 아니라면 이 블록은 의미 없음 — 있어도 무해)
     if (parsed?.sessionId && typeof parsed.sessionId === 'string') {
       if (serverSessionId.value !== parsed.sessionId) {
         serverSessionId.value = parsed.sessionId
@@ -433,7 +727,6 @@ const send = async () => {
 
     if (goResultIfNeeded(parsed, r)) return
 
-    // 중복 방지 pushBot 사용
     pushBot(r.text, { stage: r.stage, end: r.end })
 
     const ev = pickEventName(parsed)
@@ -448,7 +741,7 @@ const send = async () => {
 }
 
 /* =========================
- *  선택 이벤트 전송: scenario + history 전달
+ *  선택 이벤트 전송: scenario만 전달 (백엔드 history 없음)
  * ========================= */
 
 const decide = async (choice) => {
@@ -474,13 +767,10 @@ const decide = async (choice) => {
 
   try {
     const scenarioId = selectedScenario.value ?? 'romance'
-    const history = buildHistoryPayload(20)
-
-    const data = await sendDecision(event, answer, { scenario: scenarioId, history })
+    const data = await sendDecision(event, answer, { scenario: scenarioId })
 
     const parsed = normalizeResponse(data)
 
-    //  서버 sessionId 확보 + 저장 + (있으면) 복원
     if (parsed?.sessionId && typeof parsed.sessionId === 'string') {
       if (serverSessionId.value !== parsed.sessionId) {
         serverSessionId.value = parsed.sessionId
@@ -493,7 +783,6 @@ const decide = async (choice) => {
 
     if (goResultIfNeeded(parsed, r)) return
 
-    // 중복 방지 pushBot 사용
     pushBot(r.text, { stage: r.stage, end: r.end })
 
     const ev2 = pickEventName(parsed)
@@ -540,143 +829,7 @@ function eventToActionText(eventName, answer) {
       return yes ? "요청을 수락했습니다." : "요청을 거절했습니다."
   }
 }
-
-function buildEventCardText(eventName) {
-  return eventToQuestion(eventName)
-}
 </script>
-
-<template>
-  <main class="dm">
-    <!-- 좌측: DM 리스트 -->
-    <aside class="sidebar">
-      <div class="sidebarTop">
-        <div class="appTitle">DM</div>
-        <div class="hint">로맨스스캠 체험</div>
-      </div>
-
-      <button class="room active" type="button">
-        <img class="roomAvatar" src="/img/씹덕1.jpeg" alt="미아" />
-        <div class="roomMeta">
-          <div class="roomName">최정민(전과10범)</div>
-          <div class="roomLast">
-            {{ chats.length ? chats[chats.length - 1].text : '대화를 시작해보세요' }}
-          </div>
-        </div>
-      </button>
-
-      <div class="sidebarBottom">
-        <div class="miniTip">TIP: 수상하면 “아니오” 선택</div>
-      </div>
-    </aside>
-
-    <!-- 우측: 채팅 -->
-    <section class="panel">
-      <header class="topbar">
-        <div class="profile">
-          <img class="roomAvatar" src="/img/씹덕1.jpeg" alt="미아" />
-          <div class="info">
-            <div class="name">최정민</div>
-            <div class="status">online</div>
-          </div>
-        </div>
-
-        <div class="actions">
-          <button class="ghost" type="button" title="통화">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round" stroke-linejoin="round">
-              <path
-                  d="M22 16.92v3a2 2 0 0 1-2.18 2
-                 19.79 19.79 0 0 1-8.63-3.07
-                 19.5 19.5 0 0 1-6-6
-                 19.79 19.79 0 0 1-3.07-8.67
-                 A2 2 0 0 1 4.11 2h3
-                 a2 2 0 0 1 2 1.72
-                 c.12.81.3 1.6.54 2.36
-                 a2 2 0 0 1-.45 2.11L8.09 9.91
-                 a16 16 0 0 0 6 6l1.72-1.72
-                 a2 2 0 0 1 2.11-.45
-                 c.76.24 1.55.42 2.36.54
-                 a2 2 0 0 1 1.72 2z"
-              />
-            </svg>
-          </button>
-
-          <button class="ghost" type="button" title="정보" @click="showInfo = true">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="16" x2="12" y2="12" />
-              <line x1="12" y1="8" x2="12.01" y2="8" />
-            </svg>
-          </button>
-        </div>
-      </header>
-
-      <section class="chat" ref="boxRef" @scroll="updateScrollState">
-        <div class="loadMoreWrap" v-if="canLoadMore">
-          <button class="loadMoreBtn" type="button" @click="loadOlder">
-            이전 메시지 더보기
-          </button>
-        </div>
-
-        <div class="dateLine">오늘</div>
-
-        <div
-            v-for="(c, i) in visibleChats"
-            :key="startIndex + i"
-        >
-          <div v-if="c.role === 'system'" class="systemRow">
-            <div class="systemPill">{{ c.text }}</div>
-          </div>
-
-
-          <div v-else :class="['row', c.role === 'user' ? 'me' : 'them']">
-            <div class="bubble">
-              <div class="text">{{ c.text }}</div>
-
-            </div>
-          </div>
-        </div>
-
-
-        <!-- 이벤트 선택 카드 -->
-        <div v-if="pendingEvent" class="eventCard">
-          <div class="eventTitle">선택 이벤트</div>
-          <div class="eventQ">
-            {{ eventToQuestion(pendingEvent.event) }}
-          </div>
-
-
-          <div class="eventBtns">
-            <button class="yes" @click="decide('YES')">예</button>
-            <button class="no" @click="decide('NO')">아니오</button>
-          </div>
-        </div>
-
-        <!-- 새 메시지 버튼 -->
-        <button
-            v-if="showNewMsgBtn"
-            class="newMsgBtn"
-            type="button"
-            @click="jumpToBottom"
-        >
-          새 메시지 {{ newMsgCount > 0 ? newMsgCount : '' }} ↓
-        </button>
-      </section>
-
-      <footer class="composer">
-        <input
-            ref="inputRef"
-            v-model="input"
-            @keyup.enter="send"
-            placeholder="메시지 입력…"
-        />
-        <button class="sendBtn" @click="send">전송</button>
-      </footer>
-    </section>
-  </main>
-</template>
 
 <style scoped>
 
@@ -978,4 +1131,100 @@ function buildEventCardText(eventName) {
   .dm { grid-template-columns: 1fr; height: 100vh; }
   .sidebar { display: none; }
 }
+.clickable { cursor: pointer; }
+
+.profileModal{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.profileCard{
+  width: min(420px, 92vw);
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 18px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+  padding: 16px;
+}
+
+.pcTop{
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  position: relative;
+}
+
+.pcAvatar{
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  object-fit: cover;
+  border: 1px solid #eee;
+}
+
+.pcMeta{ flex: 1; min-width: 0; }
+.pcNameRow{ display: flex; gap: 8px; align-items: center; }
+.pcName{ font-size: 18px; font-weight: 800; }
+.pcBadge{
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef6ff;
+  color: #2b6cb0;
+  border: 1px solid #d6eaff;
+}
+.pcSub{ font-size: 12px; opacity: .75; margin-top: 2px; }
+.pcJob{ font-size: 13px; margin-top: 4px; opacity: .9; }
+
+.pcClose{
+  position: absolute;
+  right: 0;
+  top: 0;
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+  opacity: .7;
+}
+
+.pcStats{
+  display: flex;
+  justify-content: space-around;
+  padding: 12px 0;
+  margin-top: 10px;
+  border-top: 1px solid #f1f1f1;
+  border-bottom: 1px solid #f1f1f1;
+}
+.pcStat{ text-align: center; }
+.pcStat .num{ font-weight: 800; }
+.pcStat .label{ font-size: 12px; opacity: .7; }
+
+.pcBio{ padding: 12px 0; }
+.pcBioLine{ font-size: 13px; line-height: 1.45; margin-top: 6px; }
+.pcBioLine b{ margin-right: 6px; }
+
+.pcActions{
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+.pcBtn{
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #e7e7e7;
+  background: #fff;
+  cursor: pointer;
+}
+.pcBtn.primary{
+  background: #111;
+  color: #fff;
+  border-color: #111;
+}
+
 </style>
