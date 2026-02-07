@@ -181,62 +181,30 @@
   </main>
 
 </template>
-
 <script setup>
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
-import { sendChat, sendDecision, getPersona } from '../api/chatApi'
 import { useRouter, useRoute } from 'vue-router'
+import { sendChat, sendDecision, getPersona } from '../api/chatApi'
 
 const router = useRouter()
 const route = useRoute()
 
-const localEventLogs = ref({})
-
+/* =========================
+ *  기본 상태
+ * ========================= */
 const input = ref('')
 const chats = ref([])
-
 const boxRef = ref(null)
 const inputRef = ref(null)
 
 const showInfo = ref(false)
 
-const atBottom = ref(true)
-const showNewMsgBtn = ref(false)
-const newMsgCount = ref(0)
+/* 프로필 모달 */
+const showProfile = ref(false)
+const profileStats = ref({ posts: 18, followers: '1.2만', following: 321 })
 
-const MAX_RENDER = 50
-const LOAD_STEP = 30
-const renderCount = ref(MAX_RENDER)
-
-const canLoadMore = computed(() => chats.value.length > renderCount.value)
-
-const startIndex = computed(() => {
-  const len = chats.value.length
-  return Math.max(0, len - renderCount.value)
-})
-
-const visibleChats = computed(() => {
-  return chats.value.slice(startIndex.value)
-})
-
-const pendingEvent = ref(null)
-
-const SCENARIOS_BY_TRACK = {
-  romance: ['romance', 'invest'], // romance(=money), invest
-  job: [],
-  invest: [],
-}
-
-const selectedTrack = ref(null)
-const selectedScenario = ref(null)
-
-// 서버가 내려주는 세션ID(프론트 저장/복원 기준키)
-const serverSessionId = ref(localStorage.getItem('simscam_server_session_id') || null)
-
-/* =========================
- *  Persona
- * ========================= */
-
+/* 페르소나 */
+const personaLoading = ref(true)
 const persona = ref({
   name: '상대',
   age: '',
@@ -248,115 +216,47 @@ const persona = ref({
   avatarUrl: '/img/씹덕1.jpeg',
 })
 
-function defaultAvatarByScenario(s) {
-  // 파일 없으면 기존 이미지로만 써도 됨
-  if (s === 'invest') return '/img/김부자.png'
-  if (s === 'romance') return '/img/일본인 여자.png'
-  return '/img/씹덕1.jpeg'
-}
+/* 이벤트 */
+const pendingEvent = ref(null)
+const localEventLogs = ref({})
 
-function mapPersona(raw = {}, scenarioId = 'romance') {
-  const name = raw['이름'] ?? raw['닉네임'] ?? raw['Name'] ?? '상대'
-  const age = raw['나이'] ?? raw['age'] ?? ''
-  const job = raw['직업'] ?? raw['job'] ?? ''
-  const location = raw['주소지'] ?? raw['거주지'] ?? raw['location'] ?? ''
-  const personality = raw['성격'] ?? raw['personality'] ?? ''
-  const traits = raw['특징'] ?? raw['traits'] ?? ''
+/* 스크롤 */
+const atBottom = ref(true)
+const showNewMsgBtn = ref(false)
+const newMsgCount = ref(0)
 
-  const subtitle = [job, location].filter(Boolean).join(' · ')
-  const avatarUrl = defaultAvatarByScenario(scenarioId)
+/* 렌더링 제한 */
+const MAX_RENDER = 50
+const LOAD_STEP = 30
+const renderCount = ref(MAX_RENDER)
 
-  return { name, age, job, location, personality, traits, subtitle, avatarUrl }
-}
-
-async function loadPersona() {
-  const scenarioId = selectedScenario.value ?? 'romance'
-  try {
-    const raw = await getPersona(scenarioId)
-    persona.value = mapPersona(raw, scenarioId)
-  } catch {
-    persona.value = {
-      name: '상대',
-      age: '',
-      job: '',
-      location: '',
-      personality: '',
-      traits: '',
-      subtitle: '',
-      avatarUrl: defaultAvatarByScenario(scenarioId),
-    }
-  }
-}
-
-const showProfile = ref(false)
-
-// 인스타 연출용: persona 기반으로 stats를 그럴듯하게
-const profileStats = ref({ posts: 0, followers: '0', following: 0 })
-
-function buildProfileStats(p) {
-  const job = (p.job ?? '').toString()
-  const traits = (p.traits ?? '').toString()
-  const location = (p.location ?? '').toString()
-  const personality = (p.personality ?? '').toString()
-
-  // 💰 부자 / 투자 / 자산 애널리스트
-  const rich =
-      job.includes('자산') ||
-      job.includes('애널') ||
-      job.includes('투자') ||
-      traits.includes('성공') ||
-      traits.includes('외제차')
-
-  // 🇯🇵 일본인 유학생
-  const japaneseStudent =
-      job.includes('유학생') ||
-      job.includes('학생') ||
-      location.includes('일본') ||
-      traits.includes('일본') ||
-      personality.includes('일본')
-
-  // 우선순위: 부자 > 일본인 유학생 > 일반
-  if (rich) {
-    return {
-      posts: 73,
-      followers: '3.2만',
-      following: 123,
-    }
-  }
-
-  if (japaneseStudent) {
-    return {
-      posts: 24,        // 일상 사진 위주
-      followers: '1.2천',
-      following: 612,   // 많이 팔로우하는 타입
-    }
-  }
-
-  // 기본값
-  return {
-    posts: 18,
-    followers: '1.2만',
-    following: 321,
-  }
-}
-
-function openProfile() {
-  profileStats.value = buildProfileStats(persona.value)
-  showProfile.value = true
-}
-
-function closeProfile() {
-  showProfile.value = false
-}
-
+const canLoadMore = computed(() => chats.value.length > renderCount.value)
+const startIndex = computed(() => Math.max(0, chats.value.length - renderCount.value))
+const visibleChats = computed(() => chats.value.slice(startIndex.value))
 
 /* =========================
- *  유저/트랙/시나리오
+ *  sid (클라 고정 세션)
  * ========================= */
-
-function getUserId() {
-  return localStorage.getItem('simscam_user_id') || 'guest'
+function getClientSid() {
+  let sid = localStorage.getItem('simscam_client_sid')
+  if (!sid) {
+    sid = 'sid_' + Math.random().toString(36).slice(2) + Date.now().toString(36)
+    localStorage.setItem('simscam_client_sid', sid)
+  }
+  return sid
 }
+
+/* =========================
+ *  시나리오 선택
+ * ========================= */
+const SCENARIOS_BY_TRACK = {
+  romance: ['romance'], // 필요하면 ['romance', 'invest']
+  job: ['job'],
+  invest: ['invest'],
+}
+
+const selectedTrack = ref(null)
+const selectedScenario = ref(null)
 
 function getTrackId() {
   const st = history.state?.track ?? route.state?.track
@@ -376,50 +276,41 @@ function ensureScenarioRandomEveryTime() {
   selectedTrack.value = trackId
 
   const pool = SCENARIOS_BY_TRACK[trackId] || []
-  const fallbackScenario = 'romance'
-
-  const picked = pool.length
+  selectedScenario.value = pool.length
       ? pool[Math.floor(Math.random() * pool.length)]
-      : fallbackScenario
-
-  selectedScenario.value = picked
+      : 'romance'
 }
 
 /* =========================
- *  sessionId 기반 localStorage 저장/복원
+ *  localStorage 저장/복원
  * ========================= */
-
-function chatStorageKey(sessionId, scenario) {
-  const sid = sessionId || 'no-session'
-  const sc = scenario || 'romance'
-  return `scam_chat:${sid}:${sc}`
+function chatStorageKey(sid, scenario) {
+  return `scam_chat:${sid}:${scenario || 'romance'}`
 }
 
 function saveChatToStorage() {
-  const sid = serverSessionId.value
+  const sid = getClientSid()
   const sc = selectedScenario.value || 'romance'
-  if (!sid) return
 
   const payload = {
-    sessionId: sid,
+    sid,
     scenario: sc,
     updatedAt: Date.now(),
     chats: chats.value,
     localEventLogs: localEventLogs.value,
+    persona: persona.value,
   }
 
   try {
     localStorage.setItem(chatStorageKey(sid, sc), JSON.stringify(payload))
   } catch {
-    // storage full 등은 조용히 무시
+    // ignore
   }
 }
 
 function loadChatFromStorage() {
-  const sid = serverSessionId.value
+  const sid = getClientSid()
   const sc = selectedScenario.value || 'romance'
-  if (!sid) return false
-
   const raw = localStorage.getItem(chatStorageKey(sid, sc))
   if (!raw) return false
 
@@ -427,6 +318,7 @@ function loadChatFromStorage() {
     const saved = JSON.parse(raw)
     if (Array.isArray(saved?.chats)) chats.value = saved.chats
     if (saved?.localEventLogs && typeof saved.localEventLogs === 'object') localEventLogs.value = saved.localEventLogs
+    if (saved?.persona && typeof saved.persona === 'object') persona.value = { ...persona.value, ...saved.persona }
     return true
   } catch {
     return false
@@ -434,30 +326,8 @@ function loadChatFromStorage() {
 }
 
 /* =========================
- *  chat push helpers
- * ========================= */
-
-function pushBot(text, extra = {}) {
-  const norm = (text ?? '').toString().trim()
-  if (!norm) {
-    chats.value.push({ role: 'bot', text: '(응답 없음)', ...extra })
-    return
-  }
-
-  // 직전 bot 메시지 찾기
-  const lastBot = [...chats.value].reverse().find(m => m.role === 'bot')
-  const lastNorm = (lastBot?.text ?? '').toString().trim()
-
-  // 완전 동일하면 스킵
-  if (lastNorm && lastNorm === norm) return
-
-  chats.value.push({ role: 'bot', text: norm, ...extra })
-}
-
-/* =========================
  *  응답 normalize
  * ========================= */
-
 function normalizeResponse(data) {
   if (typeof data === 'string') {
     try { return JSON.parse(data) } catch { return { text: data } }
@@ -466,50 +336,19 @@ function normalizeResponse(data) {
 }
 
 function normalizeServerPayload(parsed) {
-  const text =
-      parsed?.text ??
-      parsed?.reply ??
-      parsed?.message ??
-      '(응답 없음)'
-
-  const currentEvent =
-      parsed?.currentEvent ??
-      parsed?.CurrentEvent ?? // 혹시 아직 백엔드 통일 전이면 방어
-      null
-
-  const event =
-      parsed?.event ??
-      currentEvent ??
-      null
-
-  const end = !!(parsed?.end)
-
-  const stage =
-      parsed?.['단계'] ??
-      parsed?.stage ??
-      null
-
-  const eventLogs =
-      parsed?.eventLogs ??
-      {}
-
-  return { text, currentEvent, event, end, stage, eventLogs }
+  const text = parsed?.text ?? parsed?.reply ?? parsed?.message ?? '(응답 없음)'
+  const currentEvent = parsed?.currentEvent ?? parsed?.CurrentEvent ?? null
+  const event = parsed?.event ?? currentEvent ?? null
+  const end = !!parsed?.end
+  const stage = parsed?.['단계'] ?? parsed?.stage ?? null
+  const eventLogs = parsed?.eventLogs ?? {}
+  const image = parsed?.image ?? null
+  return { text, currentEvent, event, end, stage, eventLogs, image }
 }
 
 function pickEventName(parsed) {
-  const ev =
-      parsed?.event ??
-      parsed?.currentEvent ??
-      parsed?.CurrentEvent ??
-      null
-
+  const ev = parsed?.event ?? parsed?.currentEvent ?? parsed?.CurrentEvent ?? null
   return (typeof ev === 'string' && ev.trim()) ? ev.trim() : null
-}
-
-function nextStepFromLogs(logs) {
-  const steps = Object.keys(logs || {})
-      .map(k => Number(String(k).split('_')[0]) || 0)
-  return (steps.length ? Math.max(...steps) : 0) + 1
 }
 
 function mergeLogs(serverLogs = {}, localLogs = {}) {
@@ -520,10 +359,122 @@ function hasAnyEventLogs(logs) {
   return !!logs && Object.keys(logs).length > 0
 }
 
-/* =========================
- *  UI Focus / Scroll
- * ========================= */
+function nextStepFromLogs(logs) {
+  const steps = Object.keys(logs || {}).map(k => Number(String(k).split('_')[0]) || 0)
+  return (steps.length ? Math.max(...steps) : 0) + 1
+}
 
+function pushBot(text, extra = {}) {
+  const norm = (text ?? '').toString().trim()
+  if (!norm) {
+    chats.value.push({ role: 'bot', text: '(응답 없음)', ...extra })
+    return
+  }
+
+  // 중복 방지
+  const lastBot = [...chats.value].reverse().find(m => m.role === 'bot')
+  const lastNorm = (lastBot?.text ?? '').toString().trim()
+  if (lastNorm && lastNorm === norm) return
+
+  chats.value.push({ role: 'bot', text: norm, ...extra })
+}
+
+/* =========================
+ *  Persona + avatar
+ * ========================= */
+function defaultAvatarByScenario(scenarioId) {
+  // 네 프로젝트에 맞게 경로 수정 가능
+  if (scenarioId === 'job') return '/img/씹덕1.jpeg'
+  if (scenarioId === 'invest') return '/img/씹덕1.jpeg'
+  return '/img/씹덕1.jpeg'
+}
+
+function pickAvatarByPersona(raw = {}, scenarioId = 'romance') {
+  // persona 키는 한글로 내려오니까 한글 우선
+  const job = (raw['직업'] ?? raw.job ?? '').toString()
+  const traits = (raw['특징'] ?? raw.traits ?? '').toString()
+
+  // 부자/애널리스트 느낌이면 다른 아바타 쓰고 싶다면 여기서 분기
+  if (job.includes('자산') || job.includes('애널') || traits.includes('외제차') || traits.includes('성공')) {
+    return '/img/씹덕1.jpeg'
+  }
+
+  // 일본 유학생
+  if (job.includes('유학생') || traits.includes('일본')) {
+    return '/img/씹덕1.jpeg'
+  }
+
+  return defaultAvatarByScenario(scenarioId)
+}
+
+function mapPersona(raw = {}, scenarioId = 'romance') {
+  const name = raw['이름'] ?? raw['닉네임'] ?? raw['Name'] ?? '상대'
+  const age = raw['나이'] ?? raw['age'] ?? ''
+  const job = raw['직업'] ?? raw['job'] ?? ''
+  const location = raw['주소지'] ?? raw['거주지'] ?? raw['location'] ?? ''
+  const personality = raw['성격'] ?? raw['personality'] ?? ''
+  const traits = raw['특징'] ?? raw['traits'] ?? ''
+
+  const subtitle = [job, location].filter(Boolean).join(' · ')
+  const avatarUrl = pickAvatarByPersona(raw, scenarioId)
+
+  return { name, age, job, location, personality, traits, subtitle, avatarUrl }
+}
+
+async function loadPersona() {
+  personaLoading.value = true
+  const scenarioId = selectedScenario.value ?? 'romance'
+
+  try {
+    const raw = await getPersona(scenarioId)
+    const mapped = mapPersona(raw, scenarioId)
+    persona.value = { ...persona.value, ...mapped }
+    profileStats.value = buildProfileStats(persona.value)
+  } catch (e) {
+    console.error('[persona] load failed', e)
+    persona.value = { ...persona.value, name: '상대', avatarUrl: defaultAvatarByScenario(scenarioId) }
+    profileStats.value = buildProfileStats(persona.value)
+  } finally {
+    personaLoading.value = false
+  }
+}
+
+function buildProfileStats(p) {
+  const job = (p.job ?? '').toString()
+  const traits = (p.traits ?? '').toString()
+  const location = (p.location ?? '').toString()
+  const personality = (p.personality ?? '').toString()
+
+  const rich =
+      job.includes('자산') ||
+      job.includes('애널') ||
+      job.includes('투자') ||
+      traits.includes('성공') ||
+      traits.includes('외제차')
+
+  const japaneseStudent =
+      job.includes('유학생') ||
+      job.includes('학생') ||
+      location.includes('일본') ||
+      traits.includes('일본') ||
+      personality.includes('일본')
+
+  if (rich) return { posts: 73, followers: '33.2만', following: 123 }
+  if (japaneseStudent) return { posts: 24, followers: '4.8천', following: 612 }
+  return { posts: 18, followers: '1.2만', following: 321 }
+}
+
+function openProfile() {
+  profileStats.value = buildProfileStats(persona.value)
+  showProfile.value = true
+}
+function closeProfile() {
+  showProfile.value = false
+}
+
+/* =========================
+ *  Focus / Scroll
+ * ========================= */
 const focusInput = async () => {
   await nextTick()
   inputRef.value?.focus?.({ preventScroll: true })
@@ -545,9 +496,7 @@ function updateScrollState() {
   atBottom.value = isNearBottom(el)
   if (atBottom.value) resetNewMsg()
 
-  if (el.scrollTop < 30) {
-    loadOlderAuto()
-  }
+  if (el.scrollTop < 30) loadOlderAuto()
 }
 
 let scrollRaf = 0
@@ -565,7 +514,6 @@ async function scrollToBottom(forceSmooth = false) {
     }
 
     const top = el.scrollHeight
-
     if (forceSmooth) el.scrollTo({ top, behavior: 'smooth' })
     else el.scrollTop = top
 
@@ -581,22 +529,17 @@ function jumpToBottom() {
 let loadingOlder = false
 async function loadOlder() {
   const el = boxRef.value
-  if (!el) return
-  if (!canLoadMore.value) return
-  if (loadingOlder) return
+  if (!el || !canLoadMore.value || loadingOlder) return
 
   loadingOlder = true
-
   const prevScrollHeight = el.scrollHeight
   const prevScrollTop = el.scrollTop
 
   renderCount.value = Math.min(chats.value.length, renderCount.value + LOAD_STEP)
-
   await nextTick()
 
   const newScrollHeight = el.scrollHeight
   const diff = newScrollHeight - prevScrollHeight
-
   el.scrollTop = prevScrollTop + diff
 
   loadingOlder = false
@@ -610,14 +553,13 @@ async function loadOlderAuto() {
   setTimeout(() => { autoLoadLock = false }, 250)
 }
 
-/* 새메시지 watch */
+/* 새 메시지 카운트 */
 watch(
     () => chats.value.length,
     async (newLen, oldLen) => {
       if (newLen <= (oldLen ?? 0)) return
 
       const added = Math.max(1, newLen - (oldLen ?? 0))
-
       if (atBottom.value) {
         await scrollToBottom(false)
         return
@@ -628,34 +570,19 @@ watch(
     }
 )
 
-/* 저장용 watch */
+/* 저장 */
 watch(
-    [chats, localEventLogs, selectedScenario, serverSessionId],
+    [chats, localEventLogs, selectedScenario, persona],
     () => saveChatToStorage(),
     { deep: true }
 )
 
-/* 시나리오 바뀌면 persona도 새로 */
-watch(selectedScenario, async () => {
-  await loadPersona()
-})
-
-onMounted(async () => {
-  ensureScenarioRandomEveryTime()
-
-  // ✅ 시나리오 결정된 후 페르소나 로드
-  await loadPersona()
-
-  // sessionId가 이미 있으면 저장된 대화 복원
-  loadChatFromStorage()
-
-  await focusInput()
-  await scrollToBottom(false)
-})
-
 /* =========================
- *   결과 페이지 이동 로직
+ *  결과 페이지 이동
  * ========================= */
+function getUserId() {
+  return localStorage.getItem('simscam_user_id') || 'guest'
+}
 
 function goResultIfNeeded(parsed, r) {
   const shouldEnd = !!(r?.end || parsed?.end)
@@ -672,7 +599,7 @@ function goResultIfNeeded(parsed, r) {
   const userId = getUserId()
   const trackId = selectedTrack.value ?? getTrackId()
   const scenarioId = selectedScenario.value ?? 'romance'
-  const sid = serverSessionId.value || parsed?.sessionId || 'no-session'
+  const sid = getClientSid()
 
   const resultPayload = {
     userId,
@@ -685,10 +612,10 @@ function goResultIfNeeded(parsed, r) {
     stage: (parsed?.['단계'] ?? parsed?.stage ?? r?.stage ?? null),
   }
 
-  localStorage.setItem(`scam_result:${userId}:${trackId}:${scenarioId}`, JSON.stringify(resultPayload))
+  localStorage.setItem(`scam_result:${sid}:${trackId}:${scenarioId}`, JSON.stringify(resultPayload))
   localStorage.setItem(`scam_result_latest:${userId}`, JSON.stringify(resultPayload))
   localStorage.setItem('scam_result', JSON.stringify(resultPayload))
-  localStorage.setItem(`scam_result:${sid}:${trackId}:${scenarioId}`, JSON.stringify(resultPayload))
+
   localStorage.setItem(`simscam_last_scenario:${userId}`, scenarioId)
   localStorage.setItem(`simscam_last_track:${userId}`, trackId)
 
@@ -697,9 +624,8 @@ function goResultIfNeeded(parsed, r) {
 }
 
 /* =========================
- *  메시지 전송: scenario만 전달 (백엔드 history 없음)
+ *  전송/선택
  * ========================= */
-
 const send = async () => {
   const text = input.value.trim()
   if (!text) return
@@ -710,45 +636,26 @@ const send = async () => {
 
   try {
     const scenarioId = selectedScenario.value ?? 'romance'
-    const data = await sendChat(text, { scenario: scenarioId })
-
-    const parsed = normalizeResponse(data)
-
-    // (백엔드가 sessionId를 내려주는 구조가 아니라면 이 블록은 의미 없음 — 있어도 무해)
-    if (parsed?.sessionId && typeof parsed.sessionId === 'string') {
-      if (serverSessionId.value !== parsed.sessionId) {
-        serverSessionId.value = parsed.sessionId
-        localStorage.setItem('simscam_server_session_id', parsed.sessionId)
-        loadChatFromStorage()
-      }
-    }
-
+    const parsed = normalizeResponse(await sendChat(text, { scenario: scenarioId }))
     const r = normalizeServerPayload(parsed)
 
     if (goResultIfNeeded(parsed, r)) return
 
-    pushBot(r.text, { stage: r.stage, end: r.end })
+    pushBot(r.text, { stage: r.stage, end: r.end, image: r.image })
 
     const ev = pickEventName(parsed)
     pendingEvent.value = ev ? { event: ev } : null
-
   } catch (e) {
-    pushBot('연결 실패')
     console.error(e)
+    pushBot('연결 실패')
   } finally {
     focusInput()
   }
 }
 
-/* =========================
- *  선택 이벤트 전송: scenario만 전달 (백엔드 history 없음)
- * ========================= */
-
 const decide = async (choice) => {
   const answer = choice === 'YES' ? 'yes' : 'no'
-
-  const eventObj = pendingEvent.value
-  const event = eventObj?.event
+  const event = pendingEvent.value?.event
   pendingEvent.value = null
 
   if (!event) {
@@ -759,7 +666,7 @@ const decide = async (choice) => {
   chats.value.push({
     role: 'system',
     text: eventToActionText(event, answer),
-    meta: { kind: 'eventAction', event, answer }
+    meta: { kind: 'eventAction', event, answer },
   })
 
   const step = nextStepFromLogs(localEventLogs.value)
@@ -767,39 +674,28 @@ const decide = async (choice) => {
 
   try {
     const scenarioId = selectedScenario.value ?? 'romance'
-    const data = await sendDecision(event, answer, { scenario: scenarioId })
-
-    const parsed = normalizeResponse(data)
-
-    if (parsed?.sessionId && typeof parsed.sessionId === 'string') {
-      if (serverSessionId.value !== parsed.sessionId) {
-        serverSessionId.value = parsed.sessionId
-        localStorage.setItem('simscam_server_session_id', parsed.sessionId)
-        loadChatFromStorage()
-      }
-    }
-
+    const parsed = normalizeResponse(await sendDecision(event, answer, { scenario: scenarioId }))
     const r = normalizeServerPayload(parsed)
+
+    if (r.eventLogs && typeof r.eventLogs === 'object') {
+      localEventLogs.value = mergeLogs(r.eventLogs, localEventLogs.value)
+    }
 
     if (goResultIfNeeded(parsed, r)) return
 
-    pushBot(r.text, { stage: r.stage, end: r.end })
+    pushBot(r.text, { stage: r.stage, end: r.end, image: r.image })
 
     const ev2 = pickEventName(parsed)
     pendingEvent.value = ev2 ? { event: ev2 } : null
-
   } catch (e) {
-    pushBot('선택 전송 실패')
     console.error(e)
+    pushBot('선택 전송 실패')
   } finally {
     focusInput()
   }
 }
 
-/* =========================
- *  이벤트 카드 텍스트
- * ========================= */
-
+/* 이벤트 문구 */
 function eventToQuestion(eventName) {
   switch (eventName) {
     case '금전요구': return '지금 돈을 보내 달라는 요청에 응할까요?'
@@ -812,24 +708,34 @@ function eventToQuestion(eventName) {
 }
 
 function eventToActionText(eventName, answer) {
-  const yes = answer === "yes"
-
+  const yes = answer === 'yes'
   switch (eventName) {
-    case "금전요구":
-      return yes ? "요청대로 돈을 송금했습니다." : "송금 요청을 거절했습니다."
-    case "개인정보요구":
-      return yes ? "요청대로 개인정보를 전달했습니다." : "개인정보 제공을 거절했습니다."
-    case "투자권유":
-      return yes ? "요청대로 투자를 진행했습니다." : "투자 제안을 거절했습니다."
-    case "앱설치유도":
-      return yes ? "요청대로 앱을 설치했습니다." : "앱 설치를 거절했습니다."
-    case "사이트가입유도":
-      return yes ? "요청대로 사이트에 가입했습니다." : "사이트 가입을 거절했습니다."
-    default:
-      return yes ? "요청을 수락했습니다." : "요청을 거절했습니다."
+    case '금전요구': return yes ? '요청대로 돈을 송금했습니다.' : '송금 요청을 거절했습니다.'
+    case '개인정보요구': return yes ? '요청대로 개인정보를 전달했습니다.' : '개인정보 제공을 거절했습니다.'
+    case '투자권유': return yes ? '요청대로 투자를 진행했습니다.' : '투자 제안을 거절했습니다.'
+    case '앱설치유도': return yes ? '요청대로 앱을 설치했습니다.' : '앱 설치를 거절했습니다.'
+    case '사이트가입유도': return yes ? '요청대로 사이트에 가입했습니다.' : '사이트 가입을 거절했습니다.'
+    default: return yes ? '요청을 수락했습니다.' : '요청을 거절했습니다.'
   }
 }
+
+/* =========================
+ *  마운트
+ * ========================= */
+onMounted(async () => {
+  ensureScenarioRandomEveryTime()
+
+  // 저장된 대화 먼저 복원
+  loadChatFromStorage()
+
+  // 페르소나 로드
+  await loadPersona()
+
+  await focusInput()
+  await scrollToBottom(false)
+})
 </script>
+
 
 <style scoped>
 
