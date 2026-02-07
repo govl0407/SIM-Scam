@@ -51,6 +51,8 @@ public class chatController {
             filteredResponse.put("end", fullGptResponse.get("end"));
             filteredResponse.put("단계", fullGptResponse.get("단계"));
             filteredResponse.put("currentEvent", ChatMemory.getCurrentEvent(compositeKey));
+            // 추가: 프론트 저장/복원에 필요
+            filteredResponse.put("sessionId", sessionId);
 
             return filteredResponse;
         } catch (Exception e) {
@@ -61,11 +63,11 @@ public class chatController {
     @PostMapping("/event-response")
     public Map<String, Object> eventResponse(
             @RequestBody EventResponseDto request,
-            @RequestParam("scenario") String scenario, // 🎯 시나리오 추가
+            @RequestParam("scenario") String scenario,
             HttpSession session) {
 
         String sessionId = session.getId();
-        String strJson = chatService.eventResponse(sessionId, request, scenario); // 🎯 시나리오 전달
+        String strJson = chatService.eventResponse(sessionId, request, scenario);
 
         try {
             Map<String, Object> fullGptResponse = objectMapper.readValue(strJson, Map.class);
@@ -76,8 +78,10 @@ public class chatController {
             filteredResponse.put("text", fullGptResponse.get("text"));
             filteredResponse.put("image", fullGptResponse.get("image"));
             filteredResponse.put("단계", fullGptResponse.get("단계"));
-            filteredResponse.put("eventLogs", ChatMemory.getEventLogs(compositeKey)); // 🎯 Key 수정
-            filteredResponse.put("currentEvent", ChatMemory.getCurrentEvent(compositeKey)); // 🎯 Key 수정
+            filteredResponse.put("eventLogs", ChatMemory.getEventLogs(compositeKey));
+            filteredResponse.put("currentEvent", ChatMemory.getCurrentEvent(compositeKey));
+            // 추가: 프론트 저장/복원에 필요
+            filteredResponse.put("sessionId", sessionId);
 
             return filteredResponse;
         } catch (Exception e) {
