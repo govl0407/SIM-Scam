@@ -11,7 +11,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.HashMap;
 import java.util.Map;
-@CrossOrigin(origins = "http://localhost:5173", allowCredentials = "true")
+@CrossOrigin(
+        origins = "http://simscam-frontend.s3-website.kr.object.ncloudstorage.com",
+        allowCredentials = "true",
+        allowedHeaders = "*"
+)
 @RestController
 @RequestMapping("/api/chat")
 public class chatController {
@@ -73,7 +77,7 @@ public class chatController {
             filteredResponse.put("image", fullGptResponse.get("image"));
             filteredResponse.put("단계", fullGptResponse.get("단계"));
             filteredResponse.put("eventLogs", ChatMemory.getEventLogs(compositeKey)); // 🎯 Key 수정
-            filteredResponse.put("CurrentEvent", ChatMemory.getCurrentEvent(compositeKey)); // 🎯 Key 수정
+            filteredResponse.put("currentEvent", ChatMemory.getCurrentEvent(compositeKey)); // 🎯 Key 수정
 
             return filteredResponse;
         } catch (Exception e) {
