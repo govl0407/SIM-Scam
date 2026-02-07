@@ -1,20 +1,35 @@
 import axios from "axios";
 
-const BASE = "http://localhost:8080";
+const api = axios.create({
+    baseURL: "http://211.188.56.185:8080",
+    withCredentials: true,
+});
 
-// 일반 채팅 보내기
-export async function sendChat(text) {
-    const res = await axios.post(`${BASE}/api/chat/message`, {
-        message: text,
-    });
+function normalizeScenario(s) {
+    const v = (s ?? "").toString().trim();
+    return v || "romance";
+}
+
+export async function sendChat(text, opts = {}) {
+    const scenario = normalizeScenario(opts.scenario);
+
+    const res = await api.post(
+        "/api/chat/message",
+        { message: text },
+        { params: { scenario } }
+    );
+
     return res.data;
 }
 
-// 예 / 아니오 선택 보내기 (이벤트 응답)
-export async function sendDecision(event, answer) {
-    const res = await axios.post(`${BASE}/api/chat/event-response`, {
-        event,
-        answer, // "yes" | "no"
-    });
+export async function sendDecision(event, answer, opts = {}) {
+    const scenario = normalizeScenario(opts.scenario);
+
+    const res = await api.post(
+        "/api/chat/event-response",
+        { event, answer },
+        { params: { scenario } }
+    );
+
     return res.data;
 }

@@ -5,31 +5,73 @@ import { useRoute, useRouter } from "vue-router";
 const route = useRoute();
 const router = useRouter();
 
-//유저/시나리오 식별 (로그인 붙이면 simscam_user_id를 저장한다고 가정)
+const DEFAULT_RESULT = {
+  currentEvent: null,
+  eventLogs: {},
+  stage: null,
+  userId: null,
+  scenarioId: null,
+  trackId: null,
+  createdAt: null,
+};
+
+// 유저/트랙/시나리오 식별 (로그인 붙이면 simscam_user_id를 저장한다고 가정)
 function getUserIdFromStorage() {
   return localStorage.getItem("simscam_user_id") || "guest";
 }
 function getLastScenarioFromStorage(userId) {
-  return localStorage.getItem(`simscam_last_scenario:${userId}`) || "default";
+  return localStorage.getItem(`simscam_last_scenario:${userId}`) || "romance";
+}
+function getLastTrackFromStorage(userId) {
+  return localStorage.getItem(`simscam_last_track:${userId}`) || "romance";
 }
 
+function safeParse(json) {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+/** localStorage에서 결과 로드(최신 결과 우선 + 레거시 호환) */
 function loadFallbackResult() {
   const userId = getUserIdFromStorage();
-  const scenarioId = getLastScenarioFromStorage(userId);
+  const lastScenario = getLastScenarioFromStorage(userId);
+  const lastTrack = getLastTrackFromStorage(userId);
 
-  // 1) 유저+시나리오 결과
-  try {
-    const s = localStorage.getItem(`scam_result:${userId}:${scenarioId}`);
-    if (s) return JSON.parse(s);
-  } catch {}
-
-  // 2) 유저 최신 결과
+  // 0) 유저 최신 결과 (가장 정확)
   try {
     const s2 = localStorage.getItem(`scam_result_latest:${userId}`);
     if (s2) return JSON.parse(s2);
   } catch {}
 
-  // 3) 기존 호환
+  // 1) 신키(user:track:scenario) - 마지막 트랙/시나리오 조합 먼저 시도
+  try {
+    const directKey = `scam_result:${userId}:${lastTrack}:${lastScenario}`;
+    const v = localStorage.getItem(directKey);
+    if (v) return JSON.parse(v);
+  } catch {}
+
+  // 2) 신키 탐색(유저 기준) - 마지막 시나리오 우선 매칭
+  try {
+    const keys = Object.keys(localStorage);
+    for (const k of keys) {
+      // scam_result:<userId>:<trackId>:<scenarioId>
+      if (k.startsWith(`scam_result:${userId}:`) && k.endsWith(`:${lastScenario}`)) {
+        const v = localStorage.getItem(k);
+        if (v) return JSON.parse(v);
+      }
+    }
+  } catch {}
+
+  // 3) 구키(user:scenario)
+  try {
+    const s = localStorage.getItem(`scam_result:${userId}:${lastScenario}`);
+    if (s) return JSON.parse(s);
+  } catch {}
+
+  // 4) 레거시 단일 키
   try {
     const legacy = localStorage.getItem("scam_result");
     if (legacy) return JSON.parse(legacy);
@@ -38,14 +80,25 @@ function loadFallbackResult() {
   return null;
 }
 
-const raw =
-    route.state?.result ||
-    loadFallbackResult() ||
-    (route.query.result ? JSON.parse(route.query.result) : null) ||
-    { currentEvent: null, eventLogs: {}, sessionId: null, stage: null, userId: null, scenarioId: null, createdAt: null };
 
-const result = computed(() => raw || { currentEvent: null, eventLogs: {}, sessionId: null, stage: null, userId: null, scenarioId: null, createdAt: null });
+const raw = computed(() => {
+  const fromState = route.state?.result ?? null;
+  if (fromState) return fromState;
 
+  const fromFallback = loadFallbackResult();
+  if (fromFallback) return fromFallback;
+
+  const fromQuery = route.query?.result ? safeParse(route.query.result) : null;
+  if (fromQuery) return fromQuery;
+
+  return DEFAULT_RESULT;
+});
+
+const result = computed(() => raw.value || DEFAULT_RESULT);
+
+/* =========================
+ *  날짜/식별자
+ * ========================= */
 
 function formatKoreanDate(msOrIso) {
   const d = msOrIso ? new Date(msOrIso) : new Date();
@@ -56,128 +109,100 @@ const recordDate = computed(() => formatKoreanDate(result.value?.createdAt));
 
 const userId = computed(() => result.value?.userId || getUserIdFromStorage());
 const scenarioId = computed(() => result.value?.scenarioId || getLastScenarioFromStorage(userId.value));
+const trackId = computed(() => result.value?.trackId || getLastTrackFromStorage(userId.value) || "romance");
+
 
 const attemptNo = ref(null);
 
-function getAttemptNoByUserScenario(u, s, sessionId) {
-  const MAP_KEY = `simscam_attempt_map:${u}:${s}`;
-  const COUNTER_KEY = `simscam_attempt_counter:${u}:${s}`;
+function getAttemptNoByUserTrackScenario(u, t, s, createdAt) {
+  if (!createdAt) return null;
 
-  let map = {};
+  const arr = [];
   try {
-    map = JSON.parse(localStorage.getItem(MAP_KEY) || "{}");
-  } catch {
-    map = {};
-  }
+    const keys = Object.keys(localStorage);
+    for (const k of keys) {
+      if (!k.startsWith(`scam_result:${u}:`)) continue;
 
-  if (!sessionId) return null;
+      const v = localStorage.getItem(k);
+      if (!v) continue;
 
-  if (map[sessionId]) return Number(map[sessionId]);
+      const obj = JSON.parse(v);
 
-  const next = Number(localStorage.getItem(COUNTER_KEY) || "0") + 1;
-  localStorage.setItem(COUNTER_KEY, String(next));
-  map[sessionId] = next;
-  localStorage.setItem(MAP_KEY, JSON.stringify(map));
-  return next;
+      if ((obj?.trackId || null) !== t) continue;
+      if ((obj?.scenarioId || null) !== s) continue;
+      if (!obj?.createdAt) continue;
+
+      arr.push(obj.createdAt);
+    }
+  } catch {}
+
+  const uniq = Array.from(new Set(arr)).sort((a, b) => a - b);
+  const idx = uniq.indexOf(createdAt);
+  return idx >= 0 ? idx + 1 : null;
 }
 
 const recordTitle = computed(() => (attemptNo.value ? `체험 #${attemptNo.value}` : "이번 체험"));
 
-// 이벤트 템플릿(가이드)
+/* =========================
+ *  이벤트 템플릿(가이드)
+ * ========================= */
+
 const EVENT_UI = {
   개인정보요구: {
     title: "개인정보 요구",
     level: "위험",
     whyWrong: [
       "연락처, 이메일, 주소는 단순한 정보가 아니라 ‘관계가 현실로 넘어가는 경계선’이에요.",
-      "“더 편하게 이야기하자”, “중요한 걸 보내야 한다”는 명목은 전형적인 접근 패턴이에요."
+      "“더 편하게 이야기하자”, “중요한 걸 보내야 한다”는 명목은 전형적인 접근 패턴이에요.",
     ],
     guide: [
       "요청 즉시 거절하고 대화 중단",
       "개인 연락처·이메일·주소 요청은 정중히 거절하고 플랫폼 안에서만 대화 유지",
       "개인 정보가 필요한 상황이라고 느껴지면 즉시 거리 두기",
     ],
-    phrases: [
-      "“개인 연락처나 이메일, 주소는 공유하지 않아요.”",
-      "“이야기는 이 플랫폼 안에서만 하고 싶어요.”",
-    ],
+    phrases: ["“개인 연락처나 이메일, 주소는 공유하지 않아요.”", "“이야기는 이 플랫폼 안에서만 하고 싶어요.”"],
     score: 3,
   },
   금전요구: {
     title: "금전 요구",
     level: "매우 위험",
     whyWrong: [
-      "수수료/보증금/긴급송금은 대표적인 사기 패턴이에요.",
-      "시간 압박(오늘까지/지금만)은 위험도를 크게 올려요.",
+      "상대는 개인적인 어려움(생활비, 비자 문제, 갑작스러운 위기)을 이유로 \n당신의 연민과 책임감을 자극해 돈을 요청했어요.",
     ],
-    guide: [
-      "송금/결제 즉시 중단",
-      "이미 보냈다면 은행·결제수단 고객센터에 즉시 연락",
-      "대화 기록 캡처 후 신고",
-    ],
-    phrases: [
-      "“돈 관련 요청은 불가능해요.”",
-      "“사기 의심돼서 신고하겠습니다.”",
-    ],
+    guide: ["송금/결제 즉시 중단", "이미 보냈다면 은행·결제수단 고객센터에 즉시 연락", "대화 기록 캡처 후 신고"],
+    phrases: ["“돈 관련 요청은 불가능해요.”", "“사기 의심돼서 신고하겠습니다.”"],
     score: 5,
   },
   투자권유: {
     title: "투자 권유",
     level: "위험",
-    whyWrong: [
-      "고수익·원금보장·리딩방은 사기 가능성이 높아요.",
-      "출금 제한 후 추가 입금 유도 패턴이 많아요.",
-    ],
-    guide: [
-      "원금/수익 보장 문구는 즉시 경고 신호로 판단",
-      "검증된 금융기관/공식 앱 외 링크는 클릭 금지",
-      "개인 계좌 입금 유도는 바로 차단",
-    ],
-    phrases: [
-      "“검증되지 않은 투자 제안은 받지 않아요.”",
-      "“공식 채널 아닌 링크는 클릭하지 않겠습니다.”",
-    ],
+    whyWrong: ["고수익·원금보장·리딩방은 사기 가능성이 높아요.", "출금 제한 후 추가 입금 유도 패턴이 많아요."],
+    guide: ["원금/수익 보장 문구는 즉시 경고 신호로 판단", "검증된 금융기관/공식 앱 외 링크는 클릭 금지", "개인 계좌 입금 유도는 바로 차단"],
+    phrases: ["“검증되지 않은 투자 제안은 받지 않아요.”", "“공식 채널 아닌 링크는 클릭하지 않겠습니다.”"],
     score: 4,
   },
   앱설치유도: {
     title: "앱 설치 유도",
     level: "매우 위험",
-    whyWrong: [
-      "원격제어/악성앱 설치로 금융앱 탈취가 가능해요.",
-      "‘보안앱’ ‘인증앱’ ‘업무앱’이라고 포장하는 경우가 많아요.",
-    ],
-    guide: [
-      "링크/파일 설치 요청 즉시 거절",
-      "설치했다면 즉시 삭제 + 보안검사 + 금융앱 비밀번호 변경",
-      "공식 스토어 외 설치는 금지",
-    ],
-    phrases: [
-      "“앱 설치는 못 합니다.”",
-      "“공식 스토어/공식 채널로만 진행할게요.”",
-    ],
+    whyWrong: ["원격제어/악성앱 설치로 금융앱 탈취가 가능해요.", "‘보안앱’ ‘인증앱’ ‘업무앱’이라고 포장하는 경우가 많아요."],
+    guide: ["링크/파일 설치 요청 즉시 거절", "설치했다면 즉시 삭제 + 보안검사 + 금융앱 비밀번호 변경", "공식 스토어 외 설치는 금지"],
+    phrases: ["“앱 설치는 못 합니다.”", "“공식 스토어/공식 채널로만 진행할게요.”"],
     score: 5,
   },
   사이트가입유도: {
     title: "사이트 가입 유도",
     level: "위험",
-    whyWrong: [
-      "가짜 사이트로 개인정보·카드정보를 수집할 수 있어요.",
-      "가입을 빌미로 인증번호 입력을 유도하기도 해요.",
-    ],
-    guide: [
-      "모르는 사이트 가입 금지",
-      "URL을 검색/검증(공식 도메인 확인)",
-      "의심되면 즉시 중단 + 신고",
-    ],
-    phrases: [
-      "“모르는 사이트 가입은 하지 않아요.”",
-      "“공식 도메인 확인 후에만 진행할게요.”",
-    ],
+    whyWrong: ["가짜 사이트로 개인정보·카드정보를 수집할 수 있어요.", "가입을 빌미로 인증번호 입력을 유도하기도 해요."],
+    guide: ["모르는 사이트 가입 금지", "URL을 검색/검증(공식 도메인 확인)", "의심되면 즉시 중단 + 신고"],
+    phrases: ["“모르는 사이트 가입은 하지 않아요.”", "“공식 도메인 확인 후에만 진행할게요.”"],
     score: 3,
   },
 };
 
-// eventLogs → 타임라인 배열
+/* =========================
+ *  eventLogs → 타임라인
+ * ========================= */
+
 const timeline = computed(() => {
   const logs = result.value?.eventLogs || {};
   const entries = Object.entries(logs);
@@ -188,14 +213,15 @@ const timeline = computed(() => {
     const event = m ? m[2] : key;
 
     const answer = (val ?? "").toString().toLowerCase(); // "yes"/"no"
-    const ui = EVENT_UI[event] || {
-      title: event,
-      level: "알 수 없음",
-      whyWrong: ["이 이벤트에 대한 가이드 템플릿이 아직 없어요."],
-      guide: ["EVENT_UI에 템플릿을 추가해 주세요."],
-      phrases: [],
-      score: 1,
-    };
+    const ui =
+        EVENT_UI[event] || {
+          title: event,
+          level: "알 수 없음",
+          whyWrong: ["이 이벤트에 대한 가이드 템플릿이 아직 없어요."],
+          guide: ["EVENT_UI에 템플릿을 추가해 주세요."],
+          phrases: [],
+          score: 1,
+        };
 
     return { key, step, event, answer, ui };
   });
@@ -207,7 +233,6 @@ const timeline = computed(() => {
 const wrongNotes = computed(() => timeline.value.filter((t) => t.answer === "yes"));
 const correctNotes = computed(() => timeline.value.filter((t) => t.answer === "no"));
 
-/** 위험 점수(yes만 합산) */
 const riskScore = computed(() => wrongNotes.value.reduce((sum, t) => sum + (t.ui.score ?? 1), 0));
 
 const escapeResult = computed(() => {
@@ -251,6 +276,9 @@ function signalLabel(step) {
   return `위험 신호 ${n}`;
 }
 
+/* =========================
+ *  Mount
+ * ========================= */
 
 onMounted(() => {
   const logs = result.value?.eventLogs || {};
@@ -259,17 +287,34 @@ onMounted(() => {
     return;
   }
 
-  // userId/scenarioId 최신값 저장(다음 fallback을 위해)
+  // 다음 fallback을 위해 최신 track/scenario 저장
   localStorage.setItem(`simscam_last_scenario:${userId.value}`, scenarioId.value);
+  localStorage.setItem(`simscam_last_track:${userId.value}`, trackId.value);
 
-  // attempt 번호 세팅 (유저별+시나리오별)
-  attemptNo.value = getAttemptNoByUserScenario(userId.value, scenarioId.value, result.value?.sessionId);
+  // attempt 번호 세팅 (유저별+트랙별+시나리오별, createdAt 기준)
+  attemptNo.value = getAttemptNoByUserTrackScenario(
+      userId.value,
+      trackId.value,
+      scenarioId.value,
+      result.value?.createdAt
+  );
 });
 
+/* =========================
+ *  Navigation
+ * ========================= */
+
 function backToChat() {
+  const u = getUserIdFromStorage();
+  const t = trackId.value || "romance";
+  localStorage.removeItem(`simscam_active_scenario:${u}:${t}`);
   router.push("/chat");
 }
+
 function goHome() {
+  const u = getUserIdFromStorage();
+  const t = trackId.value || "romance";
+  localStorage.removeItem(`simscam_active_scenario:${u}:${t}`);
   router.push("/");
 }
 </script>
@@ -298,7 +343,6 @@ function goHome() {
         기록된 위험 신호: {{ wrongNotes.length }}건
       </div>
     </section>
-
 
     <section class="card">
       <h2 class="h2">위험 신호 기록</h2>
@@ -335,7 +379,7 @@ function goHome() {
         <div class="block">
           <div class="label">이 선택이 위험한 이유</div>
           <ul>
-            <li v-for="(w, i) in t.ui.whyWrong" :key="i">{{ w }}</li>
+            <li v-for="(w, i) in t.ui.whyWrong" :key="i" class="preLine">{{ w }}</li>
           </ul>
         </div>
 
@@ -375,14 +419,15 @@ function goHome() {
       </ul>
     </section>
 
-
     <footer class="bottom">
       <button class="btn" @click="backToChat">🔁 다시 탈출 시도하기</button>
       <button class="btn primary" @click="goHome">🎮 다른 시나리오 플레이</button>
     </footer>
   </div>
 </template>
+
 <style scoped>
+
 .page{
   min-height: 100dvh;
   height: auto;
@@ -399,282 +444,4 @@ function goHome() {
       linear-gradient(180deg, #070A14 0%, #070A14 40%, #050712 100%);
 }
 
-
-/* 상단 */
-.top {
-display: flex;
-align-items: flex-end;
-justify-content: space-between;
-margin-bottom: 14px;
-gap: 16px;
-}
-
-.brandName {
-display: inline-flex;
-align-items: center;
-padding: 6px 12px;
-border-radius: 999px;
-border: 1px solid rgba(255, 255, 255, 0.10);
-background: rgba(255, 255, 255, 0.06);
-color: rgba(255, 255, 255, 0.75);
-font-weight: 900;
-letter-spacing: 0.08em;
-font-size: 12px;
-}
-
-.brandSub {
-margin-top: 10px;
-font-size: clamp(28px, 3.2vw, 44px);
-font-weight: 950;
-line-height: 1.05;
-letter-spacing: -0.02em;
-color: rgba(255, 255, 255, 0.96);
-}
-
-.brandMeta {
-margin-top: 10px;
-color: rgba(255, 255, 255, 0.72);
-font-size: 14px;
-line-height: 1.6;
-font-weight: 600;
-max-width: 56ch;
-}
-
-/* 카드(유리질감) */
-.card {
-background: rgba(255, 255, 255, 0.06);
-border: 1px solid rgba(255, 255, 255, 0.10);
-border-radius: 18px;
-padding: 16px;
-margin-top: 14px;
-box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
-backdrop-filter: blur(10px);
-}
-
-.muted {
-color: rgba(255, 255, 255, 0.62);
-font-size: 13px;
-}
-
-/* 요약 박스 */
-.riskBox {
-margin-top: 12px;
-border-radius: 16px;
-padding: 14px;
-border: 1px solid rgba(255, 255, 255, 0.10);
-background: rgba(255, 255, 255, 0.06);
-}
-
-.riskBox.ok {
-border-color: rgba(74, 222, 128, 0.25);
-background: rgba(74, 222, 128, 0.08);
-}
-
-.riskBox.warn {
-border-color: rgba(251, 191, 36, 0.22);
-background: rgba(251, 191, 36, 0.08);
-}
-
-.riskBox.bad {
-border-color: rgba(248, 113, 113, 0.28);
-background: rgba(248, 113, 113, 0.10);
-}
-
-.riskTitle {
-font-weight: 950;
-font-size: 18px;
-color: rgba(255, 255, 255, 0.95);
-}
-
-.riskDesc {
-margin-top: 8px;
-color: rgba(255, 255, 255, 0.78);
-line-height: 1.65;
-}
-
-.riskMeta {
-margin-top: 10px;
-color: rgba(255, 255, 255, 0.68);
-font-size: 13px;
-font-weight: 700;
-}
-
-.riskHint {
-margin-top: 10px;
-color: rgba(255, 255, 255, 0.55);
-font-size: 12px;
-}
-
-/* 섹션 타이틀 */
-.h2 {
-margin: 0 0 10px;
-font-size: 16px;
-font-weight: 950;
-color: rgba(255, 255, 255, 0.92);
-letter-spacing: -0.01em;
-}
-
-/* 타임라인 */
-.timeline {
-display: flex;
-flex-direction: column;
-gap: 10px;
-}
-
-.row {
-display: grid;
-grid-template-columns: 130px 1fr auto;
-gap: 12px;
-align-items: center;
-
-border-radius: 16px;
-padding: 12px;
-background: rgba(255, 255, 255, 0.04);
-border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.badge {
-display: inline-flex;
-align-items: center;
-justify-content: center;
-padding: 7px 10px;
-border-radius: 999px;
-border: 1px solid rgba(255, 255, 255, 0.12);
-background: rgba(255, 255, 255, 0.06);
-font-weight: 900;
-font-size: 12px;
-color: rgba(255, 255, 255, 0.82);
-}
-
-.rowTitle {
-font-weight: 950;
-color: rgba(255, 255, 255, 0.92);
-}
-
-.rowSub {
-color: rgba(255, 255, 255, 0.62);
-font-size: 12px;
-margin-top: 3px;
-}
-
-.pill {
-display: inline-flex;
-align-items: center;
-font-size: 12px;
-padding: 7px 10px;
-border-radius: 999px;
-border: 1px solid rgba(255, 255, 255, 0.12);
-background: rgba(255, 255, 255, 0.06);
-font-weight: 900;
-color: rgba(255, 255, 255, 0.82);
-}
-
-.pill.yes {
-border-color: rgba(248, 113, 113, 0.35);
-background: rgba(248, 113, 113, 0.12);
-}
-
-.pill.no {
-border-color: rgba(74, 222, 128, 0.28);
-background: rgba(74, 222, 128, 0.10);
-}
-
-/* 오답노트 카드 */
-.note {
-margin-top: 12px;
-border-radius: 16px;
-padding: 14px;
-background: rgba(255, 255, 255, 0.05);
-border: 1px solid rgba(255, 255, 255, 0.10);
-}
-
-.noteHead {
-display: flex;
-justify-content: space-between;
-align-items: center;
-gap: 10px;
-}
-
-.noteTitle {
-font-weight: 950;
-color: rgba(255, 255, 255, 0.92);
-}
-
-.block {
-margin-top: 12px;
-}
-
-.label {
-font-weight: 950;
-margin-bottom: 6px;
-color: rgba(255, 255, 255, 0.88);
-}
-
-ul {
-margin: 0;
-padding-left: 18px;
-color: rgba(255, 255, 255, 0.78);
-line-height: 1.7;
-}
-
-.rules {
-margin-top: 8px;
-}
-
-/* 잘한 대응 */
-.good {
-margin-top: 10px;
-border-radius: 16px;
-padding: 12px;
-background: rgba(74, 222, 128, 0.08);
-border: 1px solid rgba(74, 222, 128, 0.18);
-}
-
-.goodTitle {
-font-weight: 950;
-color: rgba(255, 255, 255, 0.92);
-}
-
-.goodDesc {
-color: rgba(255, 255, 255, 0.72);
-font-size: 14px;
-margin-top: 4px;
-}
-
-/* 하단 버튼 */
-.bottom {
-display: flex;
-justify-content: flex-end;
-gap: 12px;
-margin-top: 18px;
-}
-
-.btn {
-border: 1px solid rgba(255, 255, 255, 0.12);
-background: rgba(255, 255, 255, 0.08);
-color: rgba(255, 255, 255, 0.92);
-padding: 10px 14px;
-border-radius: 12px;
-cursor: pointer;
-font-weight: 950;
-}
-
-.btn:hover {
-background: rgba(255, 255, 255, 0.12);
-}
-
-.btn.primary {
-background: rgba(255, 255, 255, 0.92);
-color: #0B1020;
-border-color: rgba(255, 255, 255, 0.0);
-}
-
-.btn.primary:hover {
-background: rgba(255, 255, 255, 0.98);
-}
-
-@media (max-width: 640px) {
-.row { grid-template-columns: 1fr; gap: 8px; }
-.right { justify-self: start; }
-}
 </style>

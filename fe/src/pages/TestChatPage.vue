@@ -37,30 +37,133 @@ const visibleChats = computed(() => {
 
 const pendingEvent = ref(null)
 
-//유저/시나리오 헬퍼 (유저별 저장용)
+const SCENARIOS_BY_TRACK = {
+  romance: ['romance', 'invest'], // romance(=money), invest
+  job: [],
+  invest: [],
+}
+
+const selectedTrack = ref(null)
+const selectedScenario = ref(null)
+
+//  서버가 내려주는 세션ID(프론트 저장/복원 기준키)
+const serverSessionId = ref(localStorage.getItem('simscam_server_session_id') || null)
+
+// 유저 식별(로그인 없으면 guest)
 function getUserId() {
   return localStorage.getItem('simscam_user_id') || 'guest'
 }
 
-function getScenarioId() {
-  const pid = route.params?.id
+function getTrackId() {
+  const st = history.state?.track ?? route.state?.track
+  if (typeof st === 'string' && st.trim()) return st.trim()
+
+  const qp = route.query?.track
+  if (typeof qp === 'string' && qp.trim()) return qp.trim()
+
+  const pid = route.params?.track
   if (typeof pid === 'string' && pid.trim()) return pid.trim()
 
-  const qs = route.query?.scenario
-  if (typeof qs === 'string' && qs.trim()) return qs.trim()
-
-  const userId = getUserId()
-  const last = localStorage.getItem(`simscam_last_scenario:${userId}`)
-  if (last) return last
-
-  return 'default'
+  return 'romance'
 }
 
-function saveLastScenario(userId, scenarioId) {
-  localStorage.setItem(`simscam_last_scenario:${userId}`, scenarioId)
+function ensureScenarioRandomEveryTime() {
+  const trackId = getTrackId()
+  selectedTrack.value = trackId
+
+  const pool = SCENARIOS_BY_TRACK[trackId] || []
+  const fallbackScenario = 'romance'
+
+  const picked = pool.length
+      ? pool[Math.floor(Math.random() * pool.length)]
+      : fallbackScenario
+
+  selectedScenario.value = picked
 }
 
-//응답이 string이면 파싱
+/* =========================
+ *  sessionId 기반 localStorage 저장/복원
+ * ========================= */
+
+function chatStorageKey(sessionId, scenario) {
+  const sid = sessionId || 'no-session'
+  const sc = scenario || 'romance'
+  return `scam_chat:${sid}:${sc}`
+}
+
+function saveChatToStorage() {
+  const sid = serverSessionId.value
+  const sc = selectedScenario.value || 'romance'
+  if (!sid) return
+
+  const payload = {
+    sessionId: sid,
+    scenario: sc,
+    updatedAt: Date.now(),
+    chats: chats.value,
+    localEventLogs: localEventLogs.value,
+  }
+
+  try {
+    localStorage.setItem(chatStorageKey(sid, sc), JSON.stringify(payload))
+  } catch {
+    // storage full 등은 조용히 무시
+  }
+}
+
+function loadChatFromStorage() {
+  const sid = serverSessionId.value
+  const sc = selectedScenario.value || 'romance'
+  if (!sid) return false
+
+  const raw = localStorage.getItem(chatStorageKey(sid, sc))
+  if (!raw) return false
+
+  try {
+    const saved = JSON.parse(raw)
+    if (Array.isArray(saved?.chats)) chats.value = saved.chats
+    if (saved?.localEventLogs && typeof saved.localEventLogs === 'object') localEventLogs.value = saved.localEventLogs
+    return true
+  } catch {
+    return false
+  }
+}
+
+/* =========================
+ *  history payload
+ * ========================= */
+
+function buildHistoryPayload(limit = 20) {
+  return chats.value
+      .filter(m => m.role === 'user' || m.role === 'bot')
+      .slice(-limit)
+      .map(m => ({
+        role: m.role === 'user' ? 'user' : 'assistant',
+        content: m.text
+      }))
+}
+
+function pushBot(text, extra = {}) {
+  const norm = (text ?? '').toString().trim()
+  if (!norm) {
+    chats.value.push({ role: 'bot', text: '(응답 없음)', ...extra })
+    return
+  }
+
+  // 직전 bot 메시지 찾기
+  const lastBot = [...chats.value].reverse().find(m => m.role === 'bot')
+  const lastNorm = (lastBot?.text ?? '').toString().trim()
+
+  // 완전 동일하면 스킵
+  if (lastNorm && lastNorm === norm) return
+
+  chats.value.push({ role: 'bot', text: norm, ...extra })
+}
+
+/* =========================
+ *  응답 normalize
+ * ========================= */
+
 function normalizeResponse(data) {
   if (typeof data === 'string') {
     try { return JSON.parse(data) } catch { return { text: data } }
@@ -100,7 +203,12 @@ function normalizeServerPayload(parsed) {
 }
 
 function pickEventName(parsed) {
-  const ev = parsed?.event ?? parsed?.currentEvent ?? parsed?.CurrentEvent
+  const ev =
+      parsed?.event ??
+      parsed?.currentEvent ??
+      parsed?.CurrentEvent ??
+      null
+
   return (typeof ev === 'string' && ev.trim()) ? ev.trim() : null
 }
 
@@ -117,6 +225,10 @@ function mergeLogs(serverLogs = {}, localLogs = {}) {
 function hasAnyEventLogs(logs) {
   return !!logs && Object.keys(logs).length > 0
 }
+
+/* =========================
+ *  UI Focus / Scroll
+ * ========================= */
 
 const focusInput = async () => {
   await nextTick()
@@ -204,6 +316,7 @@ async function loadOlderAuto() {
   setTimeout(() => { autoLoadLock = false }, 250)
 }
 
+/*  기존 스크롤/새메시지 watch는 그대로 유지 */
 watch(
     () => chats.value.length,
     async (newLen, oldLen) => {
@@ -221,10 +334,26 @@ watch(
     }
 )
 
+/*  저장용 watch(별도) */
+watch(
+    [chats, localEventLogs, selectedScenario, serverSessionId],
+    () => saveChatToStorage(),
+    { deep: true }
+)
+
 onMounted(async () => {
+  ensureScenarioRandomEveryTime()
+
+  // sessionId가 이미 있으면(이전에 받은 적 있으면) 저장된 대화 복원
+  loadChatFromStorage()
+
   await focusInput()
   await scrollToBottom(false)
 })
+
+/* =========================
+ *   결과 페이지 이동 로직
+ * ========================= */
 
 function goResultIfNeeded(parsed, r) {
   const shouldEnd = !!(r?.end || parsed?.end)
@@ -234,66 +363,93 @@ function goResultIfNeeded(parsed, r) {
   const mergedLogs = mergeLogs(serverLogs, localEventLogs.value)
 
   if (!hasAnyEventLogs(mergedLogs)) {
-    chats.value.push({
-      role: 'bot',
-      text: '아직 기록된 위험 이벤트가 없어요. 대화를 조금 더 진행해볼까요?',
-    })
+    pushBot('아직 기록된 위험 이벤트가 없어요. 대화를 조금 더 진행해볼까요?')
     return true
   }
 
   const userId = getUserId()
-  const scenarioId = getScenarioId()
-  saveLastScenario(userId, scenarioId)
+  const trackId = selectedTrack.value ?? getTrackId()
+  const scenarioId = selectedScenario.value ?? 'romance'
+  const sid = serverSessionId.value || parsed?.sessionId || 'no-session'
 
   const resultPayload = {
     userId,
+    trackId,
     scenarioId,
+    sessionId: sid, //  같이 저장
     createdAt: Date.now(),
     currentEvent: (parsed?.currentEvent ?? parsed?.CurrentEvent ?? r?.currentEvent ?? null),
     eventLogs: mergedLogs,
     stage: (parsed?.['단계'] ?? parsed?.stage ?? r?.stage ?? null),
   }
 
-  localStorage.setItem(`scam_result:${userId}:${scenarioId}`, JSON.stringify(resultPayload))
+  // 기존 키들
+  localStorage.setItem(`scam_result:${userId}:${trackId}:${scenarioId}`, JSON.stringify(resultPayload))
   localStorage.setItem(`scam_result_latest:${userId}`, JSON.stringify(resultPayload))
   localStorage.setItem('scam_result', JSON.stringify(resultPayload))
+
+  //  세션 기반 키도 추가(세션별 결과 추적)
+  localStorage.setItem(`scam_result:${sid}:${trackId}:${scenarioId}`, JSON.stringify(resultPayload))
+
+  // ResultPage fallback용
+  localStorage.setItem(`simscam_last_scenario:${userId}`, scenarioId)
+  localStorage.setItem(`simscam_last_track:${userId}`, trackId)
 
   router.push({ path: '/result', state: { result: resultPayload } })
   return true
 }
 
+/* =========================
+ *  메시지 전송: scenario + history 전달
+ * ========================= */
+
 const send = async () => {
   const text = input.value.trim()
   if (!text) return
 
+  // 먼저 push -> 이 메시지도 history에 포함되게
   chats.value.push({ role: 'user', text })
   input.value = ''
   focusInput()
 
   try {
-    const data = await sendChat(text)
+    const scenarioId = selectedScenario.value ?? 'romance'
+    const history = buildHistoryPayload(20)
+
+    const data = await sendChat(text, { scenario: scenarioId, history })
+
     const parsed = normalizeResponse(data)
+
+    // 서버 sessionId 확보 + 저장 + (있으면) 복원
+    if (parsed?.sessionId && typeof parsed.sessionId === 'string') {
+      if (serverSessionId.value !== parsed.sessionId) {
+        serverSessionId.value = parsed.sessionId
+        localStorage.setItem('simscam_server_session_id', parsed.sessionId)
+        loadChatFromStorage()
+      }
+    }
+
     const r = normalizeServerPayload(parsed)
 
     if (goResultIfNeeded(parsed, r)) return
 
-    chats.value.push({
-      role: 'bot',
-      text: r.text,
-      stage: r.stage,
-      end: r.end,
-    })
+    // 중복 방지 pushBot 사용
+    pushBot(r.text, { stage: r.stage, end: r.end })
 
     const ev = pickEventName(parsed)
     pendingEvent.value = ev ? { event: ev } : null
 
   } catch (e) {
-    chats.value.push({ role: 'bot', text: '연결 실패' })
+    pushBot('연결 실패')
     console.error(e)
   } finally {
     focusInput()
   }
 }
+
+/* =========================
+ *  선택 이벤트 전송: scenario + history 전달
+ * ========================= */
 
 const decide = async (choice) => {
   const answer = choice === 'YES' ? 'yes' : 'no'
@@ -303,7 +459,7 @@ const decide = async (choice) => {
   pendingEvent.value = null
 
   if (!event) {
-    chats.value.push({ role: 'bot', text: '선택 전송 실패: event 없음' })
+    pushBot('선택 전송 실패: event 없음')
     return
   }
 
@@ -317,29 +473,43 @@ const decide = async (choice) => {
   localEventLogs.value[`${step}_${event}`] = answer
 
   try {
-    const data = await sendDecision(event, answer)
+    const scenarioId = selectedScenario.value ?? 'romance'
+    const history = buildHistoryPayload(20)
+
+    const data = await sendDecision(event, answer, { scenario: scenarioId, history })
+
     const parsed = normalizeResponse(data)
+
+    //  서버 sessionId 확보 + 저장 + (있으면) 복원
+    if (parsed?.sessionId && typeof parsed.sessionId === 'string') {
+      if (serverSessionId.value !== parsed.sessionId) {
+        serverSessionId.value = parsed.sessionId
+        localStorage.setItem('simscam_server_session_id', parsed.sessionId)
+        loadChatFromStorage()
+      }
+    }
+
     const r = normalizeServerPayload(parsed)
 
     if (goResultIfNeeded(parsed, r)) return
 
-    chats.value.push({
-      role: 'bot',
-      text: r.text,
-      stage: r.stage,
-      end: r.end,
-    })
+    // 중복 방지 pushBot 사용
+    pushBot(r.text, { stage: r.stage, end: r.end })
 
     const ev2 = pickEventName(parsed)
     pendingEvent.value = ev2 ? { event: ev2 } : null
 
   } catch (e) {
-    chats.value.push({ role: 'bot', text: '선택 전송 실패' })
+    pushBot('선택 전송 실패')
     console.error(e)
   } finally {
     focusInput()
   }
 }
+
+/* =========================
+ *  이벤트 카드 텍스트
+ * ========================= */
 
 function eventToQuestion(eventName) {
   switch (eventName) {
@@ -375,8 +545,6 @@ function buildEventCardText(eventName) {
   return eventToQuestion(eventName)
 }
 </script>
-
-
 
 <template>
   <main class="dm">
