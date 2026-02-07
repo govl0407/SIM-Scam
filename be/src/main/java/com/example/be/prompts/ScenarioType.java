@@ -2,7 +2,8 @@ package com.example.be.prompts;
 // ScenarioType.java
 public enum ScenarioType {
     INVEST("invest", "prompts/romance_scam_invest.txt"),
-    ROMANCE("romance", "prompts/romance_scam_money.txt");
+    ROMANCE("romance", "prompts/romance_scam_money.txt"),
+    EMPLOYMENT("employment", "prompts/employment_scam_prompt.txt");
 
     private final String key;
     private final String filePath;

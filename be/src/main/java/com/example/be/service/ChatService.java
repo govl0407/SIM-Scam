@@ -42,7 +42,7 @@ public class ChatService {
         messages.add(Map.of("role", "user", "content", request.getMessage()));
 
         // 4️⃣ 현재 진행 중인 이벤트가 있다면, GPT 응답 직전에 가장 강력한 지침으로 주입
-        String currentEvent = ChatMemory.getCurrentEvent(sessionId);
+        String currentEvent = ChatMemory.getCurrentEvent(compositeKey);
         if (currentEvent != null) {
             messages.add(Map.of("role", "system", "content", "[현재이벤트 = " + currentEvent + "]"));
         } else {
@@ -63,9 +63,9 @@ public class ChatService {
                 // 진행 중인 이벤트가 없을 때만 GPT가 제안한 새로운 이벤트 수락
                 String gptEvent = (String) replyMap.get("event");
                 if (gptEvent != null && !gptEvent.isBlank()) {
-                    String eventLabel = nextEventLabel(ChatMemory.getEventLogs(sessionId), gptEvent);
-                    ChatMemory.setCurrentEvent(sessionId, gptEvent);
-                    ChatMemory.addEventLog(sessionId, eventLabel, null);
+                    String eventLabel = nextEventLabel(ChatMemory.getEventLogs(compositeKey), gptEvent);
+                    ChatMemory.setCurrentEvent(compositeKey, gptEvent);
+                    ChatMemory.addEventLog(compositeKey, eventLabel, null);
                 }
             }
 
@@ -73,8 +73,8 @@ public class ChatService {
             messages.add(Map.of("role", "assistant", "content", reply));
 
             // 결과 반환
-            replyMap.put("currentEvent", ChatMemory.getCurrentEvent(sessionId));
-            replyMap.put("eventLogs", ChatMemory.getEventLogs(sessionId));
+            replyMap.put("currentEvent", ChatMemory.getCurrentEvent(compositeKey));
+            replyMap.put("eventLogs", ChatMemory.getEventLogs(compositeKey));
             return objectMapper.writeValueAsString(replyMap);
 
         } catch (Exception e) {
