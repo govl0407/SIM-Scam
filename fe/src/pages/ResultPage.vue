@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { resetChat } from "../api/chatApi";
 
 const route = useRoute();
 const router = useRouter();
@@ -15,7 +16,6 @@ const DEFAULT_RESULT = {
   createdAt: null,
 };
 
-// 유저/트랙/시나리오 식별 (로그인 붙이면 simscam_user_id를 저장한다고 가정)
 function getUserIdFromStorage() {
   return localStorage.getItem("simscam_user_id") || "guest";
 }
@@ -34,26 +34,26 @@ function safeParse(json) {
   }
 }
 
-/** localStorage에서 결과 로드(최신 결과 우선 + 레거시 호환) */
+// localStorage에서 결과 로드(최신 결과 우선 + 레거시 호환)
 function loadFallbackResult() {
   const userId = getUserIdFromStorage();
   const lastScenario = getLastScenarioFromStorage(userId);
   const lastTrack = getLastTrackFromStorage(userId);
 
-  // 0) 유저 최신 결과 (가장 정확)
+  // 유저 최신 결과
   try {
     const s2 = localStorage.getItem(`scam_result_latest:${userId}`);
     if (s2) return JSON.parse(s2);
   } catch {}
 
-  // 1) 신키(user:track:scenario) - 마지막 트랙/시나리오 조합 먼저 시도
+  // 마지막 트랙/시나리오 조합 먼저
   try {
     const directKey = `scam_result:${userId}:${lastTrack}:${lastScenario}`;
     const v = localStorage.getItem(directKey);
     if (v) return JSON.parse(v);
   } catch {}
 
-  // 2) 신키 탐색(유저 기준) - 마지막 시나리오 우선 매칭
+  // 신키 탐색(유저 기준) - 마지막 시나리오 우선 매칭
   try {
     const keys = Object.keys(localStorage);
     for (const k of keys) {
@@ -65,13 +65,13 @@ function loadFallbackResult() {
     }
   } catch {}
 
-  // 3) 구키(user:scenario)
+  // 구키(user:scenario)
   try {
     const s = localStorage.getItem(`scam_result:${userId}:${lastScenario}`);
     if (s) return JSON.parse(s);
   } catch {}
 
-  // 4) 레거시 단일 키
+  // 레거시 단일 키
   try {
     const legacy = localStorage.getItem("scam_result");
     if (legacy) return JSON.parse(legacy);
@@ -79,7 +79,6 @@ function loadFallbackResult() {
 
   return null;
 }
-
 
 const raw = computed(() => {
   const fromState = route.state?.result ?? null;
@@ -96,10 +95,8 @@ const raw = computed(() => {
 
 const result = computed(() => raw.value || DEFAULT_RESULT);
 
-/* =========================
- *  날짜/식별자
- * ========================= */
 
+//  날짜/식별자
 function formatKoreanDate(msOrIso) {
   const d = msOrIso ? new Date(msOrIso) : new Date();
   if (Number.isNaN(d.getTime())) return "";
@@ -110,7 +107,6 @@ const recordDate = computed(() => formatKoreanDate(result.value?.createdAt));
 const userId = computed(() => result.value?.userId || getUserIdFromStorage());
 const scenarioId = computed(() => result.value?.scenarioId || getLastScenarioFromStorage(userId.value));
 const trackId = computed(() => result.value?.trackId || getLastTrackFromStorage(userId.value) || "romance");
-
 
 const attemptNo = ref(null);
 
@@ -143,9 +139,6 @@ function getAttemptNoByUserTrackScenario(u, t, s, createdAt) {
 
 const recordTitle = computed(() => (attemptNo.value ? `체험 #${attemptNo.value}` : "이번 체험"));
 
-/* =========================
- *  이벤트 템플릿(가이드)
- * ========================= */
 
 const EVENT_UI = {
   개인정보요구: {
@@ -199,9 +192,6 @@ const EVENT_UI = {
   },
 };
 
-/* =========================
- *  eventLogs → 타임라인
- * ========================= */
 
 const timeline = computed(() => {
   const logs = result.value?.eventLogs || {};
@@ -276,6 +266,62 @@ function signalLabel(step) {
   return `위험 신호 ${n}`;
 }
 
+const resetting = ref(false);
+const resetMsg = ref("");
+
+// 결과/진행 관련 로컬스토리지 정리
+function clearResultAndProgressStorage({ scope = "scenario" } = {}) {
+  const u = userId.value || getUserIdFromStorage();
+  const t = trackId.value || "romance";
+  const s = scenarioId.value || "romance";
+
+  // fallback에서 쓰는 키들 정리
+  localStorage.removeItem(`scam_result_latest:${u}`);
+  localStorage.removeItem(`scam_result:${u}:${t}:${s}`);
+  localStorage.removeItem(`scam_result:${u}:${s}`); // 구키 호환
+  localStorage.removeItem("scam_result"); // 레거시
+
+  // 채팅 진행 상태
+  localStorage.removeItem(`simscam_active_scenario:${u}:${t}`);
+
+  if (scope === "all") {
+    localStorage.removeItem(`simscam_last_scenario:${u}`);
+    localStorage.removeItem(`simscam_last_track:${u}`);
+  }
+}
+
+
+async function resetThisScenario() {
+  resetting.value = true;
+  resetMsg.value = "";
+  try {
+    const data = await resetChat({ scenario: scenarioId.value }); // /reset?sid&scenario
+    clearResultAndProgressStorage({ scope: "scenario" });
+    resetMsg.value = data?.message || "초기화 완료";
+    router.replace({ path: "/chat", query: { scenario: scenarioId.value } });
+  } catch (e) {
+    resetMsg.value = e?.message || "초기화 실패";
+  } finally {
+    resetting.value = false;
+  }
+}
+
+
+async function resetAll() {
+  resetting.value = true;
+  resetMsg.value = "";
+  try {
+    const data = await resetChat(); // /reset?sid
+    clearResultAndProgressStorage({ scope: "all" });
+    resetMsg.value = data?.message || "전체 초기화 완료";
+    router.replace("/");
+  } catch (e) {
+    resetMsg.value = e?.message || "초기화 실패";
+  } finally {
+    resetting.value = false;
+  }
+}
+
 /* =========================
  *  Mount
  * ========================= */
@@ -299,10 +345,6 @@ onMounted(() => {
       result.value?.createdAt
   );
 });
-
-/* =========================
- *  Navigation
- * ========================= */
 
 function backToChat() {
   const u = getUserIdFromStorage();
@@ -332,16 +374,14 @@ function goHome() {
     <section class="card">
       <h2 class="h2">요약</h2>
 
-      <div v-if="wrongNotes.length > 0" class="muted" style="margin-top:6px;">
+      <div v-if="wrongNotes.length > 0" class="muted" style="margin-top: 6px">
         ⚠️ 위험한 순간이 기록됐어요. 실제 상황이라면 금전/계정 피해로 이어질 수 있습니다.
       </div>
-      <div v-else class="muted" style="margin-top:6px;">
+      <div v-else class="muted" style="margin-top: 6px">
         ✅ 안전한 선택을 지켜냈어요. 다음 대화에서도 같은 기준을 유지하면 안전합니다.
       </div>
 
-      <div class="muted" style="margin-top:10px;">
-        기록된 위험 신호: {{ wrongNotes.length }}건
-      </div>
+      <div class="muted" style="margin-top: 10px">기록된 위험 신호: {{ wrongNotes.length }}건</div>
     </section>
 
     <section class="card">
@@ -367,7 +407,7 @@ function goHome() {
     </section>
 
     <section class="card" v-if="wrongNotes.length > 0">
-      <h2 class="h2">탈출 가이드E</h2>
+      <h2 class="h2">탈출 가이드</h2>
       <div class="muted">여기서 이렇게 했으면 탈출할 수 있었어요.</div>
 
       <div v-for="t in wrongNotes" :key="t.key" class="note">
@@ -415,20 +455,30 @@ function goHome() {
       <ul class="rules">
         <li><b>신뢰는 증명되기 전까지 먼저 주어지지 않습니다.</b></li>
         <li>급한 부탁은 대부분, 급하게 판단하길 바라는 신호입니다.</li>
-        <li><b>불안하다는 감정이 들었다면</b> 그 자체가 신호입니다. 기록하고, 신고하고, 대화를 끊으세요.</li>
+        <li>
+          <b>불안하다는 감정이 들었다면</b> 그 자체가 신호입니다. 기록하고, 신고하고, 대화를 끊으세요.
+        </li>
       </ul>
     </section>
 
     <footer class="bottom">
       <button class="btn" @click="backToChat">🔁 다시 탈출 시도하기</button>
       <button class="btn primary" @click="goHome">🎮 다른 시나리오 플레이</button>
+
+      <button class="btn" :disabled="resetting" @click="resetThisScenario">
+        {{ resetting ? "초기화 중..." : "🧹 이 시나리오 초기화" }}
+      </button>
+      <button class="btn danger" :disabled="resetting" @click="resetAll">
+        {{ resetting ? "초기화 중..." : "🧨 전체 기록 초기화" }}
+      </button>
+
+      <div v-if="resetMsg" class="muted" style="margin-top: 10px">{{ resetMsg }}</div>
     </footer>
   </div>
 </template>
 
 <style scoped>
-
-.page{
+.page {
   min-height: 100dvh;
   height: auto;
   overflow: visible;
@@ -437,11 +487,197 @@ function goHome() {
 
   color: rgba(255, 255, 255, 0.92);
 
-  background:
-      radial-gradient(900px 520px at 18% 12%, rgba(168, 85, 247, 0.28), transparent 60%),
-      radial-gradient(820px 520px at 78% 18%, rgba(59, 130, 246, 0.22), transparent 62%),
-      radial-gradient(900px 700px at 48% 78%, rgba(236, 72, 153, 0.12), transparent 65%),
-      linear-gradient(180deg, #070A14 0%, #070A14 40%, #050712 100%);
+  background: radial-gradient(900px 520px at 18% 12%, rgba(168, 85, 247, 0.28), transparent 60%),
+  radial-gradient(820px 520px at 78% 18%, rgba(59, 130, 246, 0.22), transparent 62%),
+  radial-gradient(900px 700px at 48% 78%, rgba(236, 72, 153, 0.12), transparent 65%),
+  linear-gradient(180deg, #070a14 0%, #070a14 40%, #050712 100%);
+}
+
+
+.btn.danger {
+  border: 1px solid rgba(255, 120, 120, 0.55);
+  background: rgba(255, 80, 80, 0.1);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 카드 레이아웃 */
+.card{
+  margin-top: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.25);
+}
+
+.top{
+  padding: 6px 0 10px;
+}
+
+.h2{
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -0.2px;
+}
+
+.muted{
+  opacity: 0.78;
+  font-size: 13px;
+}
+
+/* 타임라인 */
+.timeline{
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.row{
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.badge{
+  font-size: 12px;
+  font-weight: 900;
+  padding: 6px 10px;
+  border-radius: 999px;
+  width: fit-content;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+
+.rowTitle{
+  font-weight: 900;
+  font-size: 14px;
+}
+
+.rowSub{
+  opacity: 0.75;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.pill{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  white-space: nowrap;
+}
+
+.pill.yes{
+  border-color: rgba(255,80,80,0.35);
+  background: rgba(255,80,80,0.12);
+}
+
+.pill.no{
+  border-color: rgba(110,231,183,0.35);
+  background: rgba(110,231,183,0.12);
+}
+
+/* 오답노트 카드 */
+.note{
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,80,80,0.20);
+  background: rgba(255,80,80,0.08);
+}
+
+.noteHead{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.noteTitle{
+  font-weight: 900;
+}
+
+.block{
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.label{
+  font-weight: 900;
+  margin-bottom: 6px;
+}
+
+.preLine{
+  white-space: pre-line;
+}
+
+/* 정답 */
+.good{
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(110,231,183,0.20);
+  background: rgba(110,231,183,0.08);
+}
+
+.goodTitle{ font-weight: 900; }
+.goodDesc{ opacity: 0.8; margin-top: 4px; }
+
+/* 규칙 리스트 */
+.rules{
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+.rules li{ margin: 6px 0; }
+
+/* 하단 버튼 */
+.bottom{
+  position: sticky;
+  bottom: 0;
+  margin-top: 16px;
+  padding: 14px 0;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn{
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.92);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.btn.primary{
+  border-color: rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.12);
+}
+
+.btn.danger{
+  border-color: rgba(255,120,120,0.35);
+  background: rgba(255,80,80,0.10);
 }
 
 </style>

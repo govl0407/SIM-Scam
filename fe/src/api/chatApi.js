@@ -3,7 +3,7 @@ import axios from "axios";
 const api = axios.create({
     baseURL: "http://211.188.56.185:8080",
     //  이제 쿠키 세션에 의존하지 않음 (남겨도 되지만 의미가 거의 없음)
-    withCredentials: false,
+    withCredentials: true,
 });
 
 function normalizeScenario(s) {
@@ -60,4 +60,14 @@ export async function getPersona(scenarioOrOpts = {}) {
     });
 
     return res.data;
+}
+
+export async function resetChat(opts = {}) {
+    const sid = getClientSid();
+    const scenario = (opts.scenario ?? "").toString().trim();
+
+    const params = scenario ? { sid, scenario } : { sid };
+
+    const res = await api.get("/api/chat/reset", { params });
+    return res.data; // { message, status }
 }

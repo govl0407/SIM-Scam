@@ -22,7 +22,6 @@
         </div>
       </button>
 
-
       <div class="sidebarBottom">
         <div class="miniTip">TIP: 수상하면 “아니오” 선택</div>
       </div>
@@ -72,6 +71,16 @@
               <line x1="12" y1="8" x2="12.01" y2="8" />
             </svg>
           </button>
+
+          <!-- ✅ NEW: 리셋 버튼 -->
+          <button class="ghost danger" type="button" title="대화 초기화" :disabled="resetting" @click="onResetChat">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <!-- refresh-cw 느낌 아이콘 -->
+              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+              <polyline points="21 3 21 9 15 9" />
+            </svg>
+          </button>
         </div>
       </header>
 
@@ -118,6 +127,9 @@
         >
           새 메시지 {{ newMsgCount > 0 ? newMsgCount : '' }} ↓
         </button>
+
+        <!-- ✅ NEW: 리셋 결과 토스트 -->
+        <div v-if="resetMsg" class="resetToast">{{ resetMsg }}</div>
       </section>
 
       <footer class="composer">
@@ -177,14 +189,13 @@
         </div>
       </div>
     </div>
-
   </main>
-
 </template>
+
 <script setup>
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { sendChat, sendDecision, getPersona } from '../api/chatApi'
+import { sendChat, sendDecision, getPersona, resetChat } from '../api/chatApi'
 
 const router = useRouter()
 const route = useRoute()
@@ -383,27 +394,21 @@ function pushBot(text, extra = {}) {
  *  Persona + avatar
  * ========================= */
 function defaultAvatarByScenario(scenarioId) {
-  // 네 프로젝트에 맞게 경로 수정 가능
-  if (scenarioId === 'job') return '/img/씹덕1.jpeg'
-  if (scenarioId === 'invest') return '/img/씹덕1.jpeg'
+  if (scenarioId === 'romance') return '/img/일본인 여자.png'
+  if (scenarioId === 'invest') return '/img/김부자.png'
   return '/img/씹덕1.jpeg'
 }
 
 function pickAvatarByPersona(raw = {}, scenarioId = 'romance') {
-  // persona 키는 한글로 내려오니까 한글 우선
   const job = (raw['직업'] ?? raw.job ?? '').toString()
   const traits = (raw['특징'] ?? raw.traits ?? '').toString()
 
-  // 부자/애널리스트 느낌이면 다른 아바타 쓰고 싶다면 여기서 분기
   if (job.includes('자산') || job.includes('애널') || traits.includes('외제차') || traits.includes('성공')) {
-    return '/img/씹덕1.jpeg'
+    return '/img/김부자.png'
   }
-
-  // 일본 유학생
   if (job.includes('유학생') || traits.includes('일본')) {
-    return '/img/씹덕1.jpeg'
+    return '/img/일본인 여자.png'
   }
-
   return defaultAvatarByScenario(scenarioId)
 }
 
@@ -612,14 +617,16 @@ function goResultIfNeeded(parsed, r) {
     stage: (parsed?.['단계'] ?? parsed?.stage ?? r?.stage ?? null),
   }
 
-  localStorage.setItem(`scam_result:${sid}:${trackId}:${scenarioId}`, JSON.stringify(resultPayload))
+  localStorage.setItem(`scam_result:${userId}:${trackId}:${scenarioId}`, JSON.stringify(resultPayload))
+  localStorage.setItem(`scam_result:${sid}:${trackId}:${scenarioId}`, JSON.stringify(resultPayload)) // 레거시/호환
   localStorage.setItem(`scam_result_latest:${userId}`, JSON.stringify(resultPayload))
   localStorage.setItem('scam_result', JSON.stringify(resultPayload))
 
   localStorage.setItem(`simscam_last_scenario:${userId}`, scenarioId)
   localStorage.setItem(`simscam_last_track:${userId}`, trackId)
 
-  router.push({ path: '/result', state: { result: resultPayload } })
+  // scenario를 query로도 넘기면 결과페이지에서 시나리오 리셋이 안정적
+  router.push({ path: '/result', query: { scenario: scenarioId }, state: { result: resultPayload } })
   return true
 }
 
@@ -719,9 +726,55 @@ function eventToActionText(eventName, answer) {
   }
 }
 
-/* =========================
- *  마운트
- * ========================= */
+// reset
+const resetting = ref(false)
+const resetMsg = ref('')
+
+async function onResetChat() {
+  const sc = selectedScenario.value ?? 'romance'
+  const ok = confirm(`'${sc}' 대화를 초기화할까요?\n(대화/이벤트 기록이 모두 리셋됩니다)`)
+  if (!ok) return
+
+  resetting.value = true
+  resetMsg.value = ''
+
+  try {
+    // 1) 백엔드 메모리 초기화
+    const data = await resetChat({ scenario: sc })
+
+    // 2) 로컬 스토리지(현재 시나리오 채팅 저장본) 삭제
+    const sid = getClientSid()
+    try { localStorage.removeItem(chatStorageKey(sid, sc)) } catch {}
+
+    // 3) 화면 상태 초기화
+    chats.value = []
+    pendingEvent.value = null
+    localEventLogs.value = {}
+    input.value = ''
+
+    renderCount.value = MAX_RENDER
+    atBottom.value = true
+    showNewMsgBtn.value = false
+    newMsgCount.value = 0
+
+    // 4) 페르소나 다시 로드(선택)
+    await loadPersona()
+
+    resetMsg.value = data?.message || '초기화 완료'
+
+    await nextTick()
+    await scrollToBottom(false)
+    await focusInput()
+  } catch (e) {
+    resetMsg.value = e?.message || '초기화 실패'
+  } finally {
+    resetting.value = false
+    // 토스트 자동 숨김(선택)
+    setTimeout(() => { resetMsg.value = '' }, 1600)
+  }
+}
+
+// 마운트
 onMounted(async () => {
   ensureScenarioRandomEveryTime()
 
@@ -736,9 +789,7 @@ onMounted(async () => {
 })
 </script>
 
-
 <style scoped>
-
 /* 중앙 시스템 로그 */
 .systemRow{
   width: 100%;
@@ -873,6 +924,13 @@ onMounted(async () => {
 .ghost:hover { background: #f6f6f6; }
 .ghost:active { transform: scale(0.96); }
 
+
+.ghost.danger{
+  border-color: rgba(255, 120, 120, 0.35);
+  background: rgba(255, 80, 80, 0.06);
+}
+.ghost:disabled{ opacity: 0.6; cursor: not-allowed; }
+
 /* 채팅 */
 .chat {
   position: relative;
@@ -954,7 +1012,6 @@ onMounted(async () => {
   font-weight: 800;
 }
 
-
 .text{
   white-space: pre-wrap;
   word-break: keep-all;
@@ -1006,6 +1063,25 @@ onMounted(async () => {
   font-weight: 800;
 }
 .newMsgBtn:hover { background: #fff; }
+
+.resetToast{
+  position: sticky;
+  bottom: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: fit-content;
+  margin: 0 auto;
+  z-index: 5;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid #e7e7e7;
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.10);
+  font-weight: 800;
+  font-size: 12px;
+  color: #444;
+}
 
 /* 입력 */
 .composer {
@@ -1132,5 +1208,4 @@ onMounted(async () => {
   color: #fff;
   border-color: #111;
 }
-
 </style>
