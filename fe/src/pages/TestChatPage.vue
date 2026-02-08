@@ -779,14 +779,40 @@ onMounted(async () => {
   ensureScenarioRandomEveryTime()
 
   // 저장된 대화 먼저 복원
-  loadChatFromStorage()
+  const hasSavedChat = loadChatFromStorage()
 
   // 페르소나 로드
   await loadPersona()
 
+  // 3) 기존 대화가 없다면 빈 문자열을 보내 첫 응답 유도
+  if (!hasSavedChat || chats.value.length === 0) {
+    await sendFirstGreeting()
+  }
+
   await focusInput()
   await scrollToBottom(false)
 })
+
+/* ✅ 새로운 함수: 첫 인사 유도 */
+async function sendFirstGreeting() {
+  try {
+    const scenarioId = selectedScenario.value ?? 'romance'
+    // 빈 문자열을 보내 서버가 "안녕? 반가워" 같은 첫 메시지를 주도록 함
+    const parsed = normalizeResponse(await sendChat("", { scenario: scenarioId }))
+    const r = normalizeServerPayload(parsed)
+
+    // 응답이 있을 경우 화면에 표시
+    if (r.text && r.text !== '(응답 없음)') {
+      pushBot(r.text, { stage: r.stage, end: r.end, image: r.image })
+
+      // 혹시 첫 마디부터 이벤트를 준다면 처리
+      const ev = pickEventName(parsed)
+      pendingEvent.value = ev ? { event: ev } : null
+    }
+  } catch (e) {
+    console.error('[Initial Greeting Error]', e)
+  }
+}
 </script>
 
 <style scoped>
