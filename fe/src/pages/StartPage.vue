@@ -28,11 +28,20 @@ const tracks = [
     one: "합격은 쉬워 보여도, 요구는 즉시 시작됩니다.",
     desc: "고연봉/해외 근무 제안 → 빠른 합격 → 항공권/숙소 제공 → 일정/이동 통제 시도",
     tone: "violet",
-    disabled: true, // ✅ 비활성화 (개발 중)
+    disabled: true, //  비활성화 (개발 중)
+  },
+  {
+    id: "invest",
+    label: "Invest",
+    title: "투자 권유 시뮬레이션",
+    one: "수익 인증 뒤엔, 더 큰 입금이 따라옵니다.",
+    desc: "소액 수익 → 신뢰 형성 → 추가 입금 압박 → 회수 불가",
+    tone: "blue",
+    disabled: true,
   },
 ];
 const selectScenario = (t) => {
-  if (t.disabled) return; // ✅ 비활성 상태면 선택 방지
+  if (t.disabled) return; //  비활성 상태면 선택 방지
   selectedId.value = t.id;
 };
 
@@ -80,7 +89,7 @@ const start = () => {
       <aside class="panel">
         <div class="panel-head">
           <div class="panel-title">TRACK SELECT</div>
-          <div class="panel-sub">하나를 고르세요. 되돌릴 수 없습니다.</div>
+          <div class="panel-sub">하나를 선택하세요. 선택한 트랙으로 진행됩니다.</div>
         </div>
 
         <div class="cards">
@@ -112,7 +121,7 @@ const start = () => {
         </button>
 
         <div class="notice">
-          ※ 교육·예방 목적의 시뮬레이션입니다. 실제 금전 송금/개인정보 거래는 발생하지 않습니다.
+          ※ 교육·예방 목적의 시뮬레이션입니다. 실제 개인정보를 전송하지 않도록 주의하세요.
         </div>
       </aside>
     </section>
