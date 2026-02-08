@@ -465,12 +465,14 @@ function goHome() {
       <button class="btn" @click="backToChat">🔁 다시 탈출 시도하기</button>
       <button class="btn primary" @click="goHome">🎮 다른 시나리오 플레이</button>
 
-      <button class="btn" :disabled="resetting" @click="resetThisScenario">
+      <button class="btn danger" :disabled="resetting" @click="resetThisScenario">
         {{ resetting ? "초기화 중..." : "🧹 이 시나리오 초기화" }}
       </button>
+      <!--
       <button class="btn danger" :disabled="resetting" @click="resetAll">
         {{ resetting ? "초기화 중..." : "🧨 전체 기록 초기화" }}
       </button>
+      -->
 
       <div v-if="resetMsg" class="muted" style="margin-top: 10px">{{ resetMsg }}</div>
     </footer>
@@ -649,45 +651,13 @@ function goHome() {
 }
 .rules li{ margin: 6px 0; }
 /* 하단 버튼 영역 수정 */
-.bottom {
-  /* 화면 하단에 고정 */
-  position: sticky;
-  bottom: 0;
-  left: 0;
-  right: 0;
-
-  /* 페이지 기본 padding(-18px)을 상쇄하여 가로로 꽉 채움 */
-  margin: 16px -18px 0 -18px;
-
-  /* 상단 경계선과 배경 효과 (Glassmorphism) */
-  padding: 16px 18px calc(16px + env(safe-area-inset-bottom));
-  background: linear-gradient(
-      to top,
-      rgba(7, 10, 20, 1) 0%,      /* 하단은 배경과 동일하게 어둡게 */
-      rgba(7, 10, 20, 0.95) 60%,  /* 버튼 영역은 불투명하게 */
-      rgba(7, 10, 20, 0) 100%     /* 상단은 자연스러운 그라데이션 */
-  );
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-
-  /* 다른 요소 위로 배치 */
-  z-index: 100;
-
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-/* 하단 버튼 영역 수정 */
+/* 하단 버튼 영역 */
 .bottom {
   position: sticky;
   bottom: 0;
   left: 0;
   right: 0;
-
-  /* 가로로 꽉 채우기 위해 마진 조정 */
   margin: 16px -18px 0 -18px;
-
-  /* 배경 및 블러 효과 */
   padding: 12px 10px calc(12px + env(safe-area-inset-bottom));
   background: linear-gradient(
       to top,
@@ -699,63 +669,51 @@ function goHome() {
   -webkit-backdrop-filter: blur(15px);
   z-index: 100;
 
-  /* 1줄 배치를 위한 설정 */
   display: flex;
-  gap: 6px; /* 버튼 사이 간격 축소 */
-  flex-wrap: nowrap; /* 줄바꿈 방지 */
-  overflow-x: auto; /* 혹시 화면이 아주 작을 경우 스크롤 허용 */
+  gap: 8px; /* 간격을 살짝 넓혀 3개 배치 시 안정감 부여 */
+  flex-wrap: nowrap;
 }
 
 .btn {
-  /* 4개가 균등하게 들어가도록 설정 */
+  /* 현재 보이는 3개 버튼이 균등하게 배분됨 */
   flex: 1 1 0;
-  min-width: 0; /* flex 환경에서 텍스트에 의해 늘어나는 것 방지 */
+  min-width: 0;
 
   display: inline-flex;
-  flex-direction: column; /* 아이콘(이모지)과 텍스트를 위아래로 배치하거나 */
   justify-content: center;
   align-items: center;
-  gap: 4px;
-
-  padding: 10px 4px; /* 여백 축소 */
+  padding: 12px 4px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.92);
   cursor: pointer;
 
-  /* 텍스트 크기 축소 및 줄바꿈 방지 */
   font-weight: 700;
-  font-size: 11px;
-  letter-spacing: -0.5px;
+  font-size: 12px; /* 3개 버튼일 때 가장 가독성이 좋은 크기 */
   white-space: nowrap;
-  word-break: keep-all;
-
   transition: all 0.2s ease;
 }
 
-/* 버튼 내 이모지나 아이콘 크기 제어 (필요시) */
-.btn span {
-  font-size: 14px;
+/* 시나리오 초기화 전용 위험(빨간색) 스타일 */
+.btn.danger {
+  border-color: rgba(255, 80, 80, 0.35);
+  background: rgba(255, 80, 80, 0.12);
+  color: #ff9494;
 }
 
-.btn:active {
-  transform: scale(0.95);
-  background: rgba(255, 255, 255, 0.15);
-}
+/* 전체 초기화 버튼을 CSS로도 숨기고 싶을 경우 사용 (선택 사항) */
+/* .bottom .btn.danger:nth-child(4) { display: none; } */
 
 .btn.primary {
   background: rgba(255, 255, 255, 0.15);
   border-color: rgba(255, 255, 255, 0.25);
 }
 
-.btn.danger {
-  border-color: rgba(255, 120, 120, 0.3);
-  background: rgba(255, 80, 80, 0.12);
-  color: #ff9494;
+.btn:active {
+  transform: scale(0.96);
 }
 
-/* 스크롤바 숨기기 (깔끔한 UI용) */
 .bottom::-webkit-scrollbar {
   display: none;
 }
