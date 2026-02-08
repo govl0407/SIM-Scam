@@ -375,7 +375,7 @@ function goHome() {
       <h2 class="h2">요약</h2>
 
       <div v-if="wrongNotes.length > 0" class="muted" style="margin-top: 6px">
-        ⚠️ 위험한 순간이 기록됐어요. 실제 상황이라면 금전/계정 피해로 이어질 수 있습니다.
+        ⚠️  스캠피해가 감지되었습니다. 실제 상황이라면 금전/계정 피해로 이어질 수 있습니다.
       </div>
       <div v-else class="muted" style="margin-top: 6px">
         ✅ 안전한 선택을 지켜냈어요. 다음 대화에서도 같은 기준을 유지하면 안전합니다.
@@ -407,8 +407,8 @@ function goHome() {
     </section>
 
     <section class="card" v-if="wrongNotes.length > 0">
-      <h2 class="h2">탈출 가이드</h2>
-      <div class="muted">여기서 이렇게 했으면 탈출할 수 있었어요.</div>
+      <h2 class="h2">스캠 대응 가이드</h2>
+      <div class="muted">여기서 이렇게 했으면 피해를 막을 수 있었어요.</div>
 
       <div v-for="t in wrongNotes" :key="t.key" class="note">
         <div class="noteHead">
@@ -424,7 +424,7 @@ function goHome() {
         </div>
 
         <div class="block">
-          <div class="label">탈출하려면 이렇게 행동하세요</div>
+          <div class="label">스캠 피해를 당하지 않으려면 이렇게 행동하세요</div>
           <ul>
             <li v-for="(g, i) in t.ui.guide" :key="i">{{ g }}</li>
           </ul>
@@ -440,7 +440,7 @@ function goHome() {
     </section>
 
     <section class="card" v-if="correctNotes.length > 0">
-      <h2 class="h2">탈출에 성공한 선택</h2>
+      <h2 class="h2">스캠 방어 성공 선택</h2>
       <div class="muted">아래 선택들은 사기 상황에서 올바른 탈출 행동이에요.</div>
 
       <div v-for="t in correctNotes" :key="t.key" class="good">
