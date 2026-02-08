@@ -20,6 +20,7 @@ const tracks = [
     one: "수익 인증 뒤엔, 더 큰 입금이 따라옵니다.",
     desc: "소액 수익 → 신뢰 형성 → 추가 입금 압박 → 회수 불가",
     tone: "blue",
+    disabled: false,
   },
   {
     id: "job",
@@ -29,15 +30,6 @@ const tracks = [
     desc: "고연봉/해외 근무 제안 → 빠른 합격 → 항공권/숙소 제공 → 일정/이동 통제 시도",
     tone: "violet",
     disabled: true, //  비활성화 (개발 중)
-  },
-  {
-    id: "invest",
-    label: "Invest",
-    title: "투자 권유 시뮬레이션",
-    one: "수익 인증 뒤엔, 더 큰 입금이 따라옵니다.",
-    desc: "소액 수익 → 신뢰 형성 → 추가 입금 압박 → 회수 불가",
-    tone: "blue",
-    disabled: true,
   },
 ];
 const selectScenario = (t) => {
