@@ -1,0 +1,39 @@
+package com.example.be.controller;
+
+import com.example.be.dto.userMessageDto;
+import com.example.be.service.ChatService;
+import java.util.Map;
+import org.springframework.web.bind.annotation.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+@RestController
+@CrossOrigin(origins = "*")
+@RequestMapping("/test")
+public class testController {
+
+    private final ChatService chatService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public testController(ChatService chatService) {
+        this.chatService = chatService;
+    }
+
+    @PostMapping("/chat")
+    public Map<String, Object> chat(@RequestBody userMessageDto request) {
+
+        String sessionId = "test-session";
+        String strJson = chatService.chat(sessionId, request);
+
+        try {
+            // GPT가 준 JSON 문자열 → Map으로 변환
+            return objectMapper.readValue(strJson, Map.class);
+        } catch (Exception e) {
+            throw new RuntimeException("GPT 응답 JSON 파싱 실패: " + strJson, e);
+        }
+    }
+
+    @GetMapping("/get")
+    public String testGet() {
+        return "hello";
+    }
+}

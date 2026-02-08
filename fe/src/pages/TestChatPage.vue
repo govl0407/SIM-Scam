@@ -732,7 +732,7 @@ const resetMsg = ref('')
 
 async function onResetChat() {
   const sc = selectedScenario.value ?? 'romance'
-  const ok = confirm(`'${sc}' 대화를 초기화할까요?\n(대화/이벤트 기록이 모두 리셋됩니다)`)
+  const ok = confirm(`대화를 초기화할까요?\n(대화/이벤트 기록이 모두 리셋됩니다)`)
   if (!ok) return
 
   resetting.value = true
@@ -947,6 +947,7 @@ async function sendFirstGreeting() {
   justify-content: center;
   line-height: 0;
 }
+
 .ghost:hover { background: #f6f6f6; }
 .ghost:active { transform: scale(0.96); }
 
@@ -1029,6 +1030,7 @@ async function sendFirstGreeting() {
   line-height: 1.25;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
 }
+
 
 
 .actionBubble{
