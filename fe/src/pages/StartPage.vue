@@ -14,6 +14,14 @@ const tracks = [
     disabled: false, // 활성화
   },
   {
+    id: "invest",
+    label: "Invest",
+    title: "투자 권유 시뮬레이션",
+    one: "수익 인증 뒤엔, 더 큰 입금이 따라옵니다.",
+    desc: "소액 수익 → 신뢰 형성 → 추가 입금 압박 → 회수 불가",
+    tone: "blue",
+  },
+  {
     id: "job",
     label: "Job",
     title: "해외 취업 제안 시뮬레이션",

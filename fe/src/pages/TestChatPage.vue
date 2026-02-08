@@ -262,8 +262,8 @@ function getClientSid() {
  * ========================= */
 const SCENARIOS_BY_TRACK = {
   romance: ['romance'], // 필요하면 ['romance', 'invest']
-  job: ['job'],
   invest: ['invest'],
+  job: ['job'],
 }
 
 const selectedTrack = ref(null)
