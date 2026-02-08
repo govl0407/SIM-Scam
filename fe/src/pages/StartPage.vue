@@ -3,7 +3,6 @@ import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 
 const router = useRouter();
-
 const tracks = [
   {
     id: "romance",
@@ -12,6 +11,7 @@ const tracks = [
     one: "호감은 빠르게, 부탁은 더 빠르게.",
     desc: "감정 몰입 → 관계 유지 압박 → 작은 부탁 → 금전/개인정보 요구",
     tone: "pink",
+    disabled: false, // 활성화
   },
   {
     id: "job",
@@ -20,8 +20,13 @@ const tracks = [
     one: "합격은 쉬워 보여도, 요구는 즉시 시작됩니다.",
     desc: "고연봉/해외 근무 제안 → 빠른 합격 → 항공권/숙소 제공 → 일정/이동 통제 시도",
     tone: "violet",
+    disabled: true, // ✅ 비활성화 (개발 중)
   },
 ];
+const selectScenario = (t) => {
+  if (t.disabled) return; // ✅ 비활성 상태면 선택 방지
+  selectedId.value = t.id;
+};
 
 const selectedId = ref(null);
 const selected = computed(() => tracks.find((t) => t.id === selectedId.value));
@@ -75,9 +80,12 @@ const start = () => {
               v-for="t in tracks"
               :key="t.id"
               class="card"
-              :class="[{ on: t.id === selectedId }, t.tone]"
-              @click="selectedId = t.id"
+              :class="[{ on: t.id === selectedId, is_disabled: t.disabled }, t.tone]"
+              :disabled="t.disabled"
+              @click="selectScenario(t)"
           >
+            <div v-if="t.disabled" class="dev-badge">준비 중</div>
+
             <div class="label">{{ t.label }}</div>
             <div class="title">{{ t.title }}</div>
             <div class="one">{{ t.one }}</div>
@@ -372,4 +380,35 @@ const start = () => {
     font-size: 36px;
   }
 }
+
+/* 비활성화 카드 스타일 */
+.card.is_disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  filter: grayscale(0.8);
+  border: 1px dashed rgba(255, 255, 255, 0.2); /* 점선 테두리로 미완성 느낌 부여 */
+}
+
+.card.is_disabled:hover {
+  transform: none; /* 호버 애니메이션 제거 */
+  background: rgba(0, 0, 0, 0.16);
+}
+
+/* 준비 중 배지 디자인 */
+.dev-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  backdrop-filter: blur(4px);
+}
+
+/* 기존 selected 배지와 겹치지 않도록 위치 조정 필요 시 수정 */
 </style>
