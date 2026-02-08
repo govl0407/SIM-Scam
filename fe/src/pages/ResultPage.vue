@@ -754,7 +754,7 @@ function goHome() {
   background: rgba(255, 80, 80, 0.12);
   color: #ff9494;
 }
--
+
 /* 스크롤바 숨기기 (깔끔한 UI용) */
 .bottom::-webkit-scrollbar {
   display: none;
