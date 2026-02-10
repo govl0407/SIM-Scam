@@ -179,7 +179,6 @@
         </div>
 
         <div class="pcBio" v-if="persona.personality || persona.traits">
-          <div class="pcBioLine" v-if="persona.personality"><b>성격</b> {{ persona.personality }}</div>
           <div class="pcBioLine" v-if="persona.traits"><b>특징</b> {{ persona.traits }}</div>
         </div>
 
