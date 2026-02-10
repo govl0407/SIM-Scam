@@ -72,7 +72,7 @@
             </svg>
           </button>
 
-          <!-- ✅ NEW: 리셋 버튼 -->
+          <!-- 리셋 버튼 -->
           <button class="ghost danger" type="button" title="대화 초기화" :disabled="resetting" @click="onResetChat">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                  stroke-linecap="round" stroke-linejoin="round">
@@ -128,7 +128,7 @@
           새 메시지 {{ newMsgCount > 0 ? newMsgCount : '' }} ↓
         </button>
 
-        <!-- ✅ NEW: 리셋 결과 토스트 -->
+        <!--리셋 결과 토스트 -->
         <div v-if="resetMsg" class="resetToast">{{ resetMsg }}</div>
       </section>
 
